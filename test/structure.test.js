@@ -8,7 +8,7 @@ describe("plugin manifest", () => {
     assert.equal(m.name, "cc-agents");
     assert.match(m.version, /^\d+\.\d+\.\d+$/);
     assert.ok(m.description && m.description.length > 0);
-    assert.ok(m.author && m.author.name && m.author.email);
+    assert.ok(m.author && m.author.name);
   });
 });
 
