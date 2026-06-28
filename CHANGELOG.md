@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - **Hook self-trigger:** `spec-plan-suggest.sh` (PostToolUse) no longer fires on the review-panel's own run-report marker. The marker path (`…/specs/.review-panel/<artifact>.md`) inherits the reviewed artifact's `-design.md`/`-plan.md` suffix, so it matched the spec/plan regex and re-suggested convening a panel on the panel's own output. Added a `*/.review-panel/*` early-exit guard. Covered by a new subtest.
 
-> Note: 0.1.1 bumped `plugin.json` to `0.1.1` but left `package.json` at `0.1.0`. This drift is reconciled in 0.1.2. 0.1.1 was not published as a git tag/release.
+> Note: 0.1.1 bumped `plugin.json` to `0.1.1` but left `package.json` at `0.1.0`. This drift is reconciled in 0.1.2. The `v0.1.1` git tag exists (it backs the compare link above), but no GitHub Release was published for it.
 
 [0.1.2]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.0...v0.1.1
