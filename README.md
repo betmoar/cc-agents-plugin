@@ -2,6 +2,8 @@
 
 GLM-offload review agents with an auto-convened multi-lens review panel for specs and plans. Writing a spec or plan in the right path automatically suggests running a panel of parallel GLM reviewers; the findings are synthesized into one scored report.
 
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ---
 
 ## Hard dependency: cc-proxy
