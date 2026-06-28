@@ -39,4 +39,12 @@ describe("spec-plan-suggest hook", () => {
     const out = runHook("docs/ui/button-design.md");
     assert.equal(out.trim(), "");
   });
+
+  it("emits nothing for the panel's own run-report marker (self-review guard)", () => {
+    // The marker basename inherits the reviewed artifact's suffix, so
+    // .../specs/.review-panel/auth-design.md looks like a nested spec.
+    // The panel must not be told to review its own marker.
+    const out = runHook("docs/superpowers/specs/.review-panel/auth-design.md");
+    assert.equal(out.trim(), "");
+  });
 });

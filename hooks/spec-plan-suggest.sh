@@ -22,6 +22,13 @@ FILE_PATH="$(printf '%s' "$PAYLOAD" | node -e '
 
 [ -n "$FILE_PATH" ] || exit 0
 
+# Skip the review-panel's own run-report marker. Its path sits under specs/
+# and its basename inherits the reviewed artifact's suffix, so it would look
+# like a nested spec/plan and re-trigger the panel on itself.
+case "$FILE_PATH" in
+  */.review-panel/*) exit 0 ;;
+esac
+
 KIND=""
 # spec: *-design.md with a /specs/ segment in the path
 if printf '%s' "$FILE_PATH" | grep -Eq '(^|/)specs/.*-design\.md$'; then
