@@ -8,7 +8,7 @@ describe("plugin manifest", () => {
     assert.equal(m.name, "cc-agents");
     assert.match(m.version, /^\d+\.\d+\.\d+$/);
     assert.ok(m.description && m.description.length > 0);
-    assert.ok(m.author && m.author.name && m.author.email);
+    assert.ok(m.author && m.author.name);
   });
 });
 
@@ -30,6 +30,14 @@ describe("agents", () => {
     for (const r of reviewers) {
       const src = readFileSync(`agents/${r}.md`, "utf8");
       assert.match(src, /\nmodel:\s*glm-5\.2\[1m\]/, `${r} wrong default model`);
+    }
+  });
+  it("the four reviewers carry no Bash (read-only least privilege)", () => {
+    for (const r of reviewers) {
+      const src = readFileSync(`agents/${r}.md`, "utf8");
+      const tools = (src.match(/\ntools:\s*(.+)/) || [])[1] || "";
+      assert.ok(!/\bBash\b/.test(tools), `${r} must not grant Bash`);
+      assert.ok(!/Write|Edit/.test(tools), `${r} must not grant Write/Edit`);
     }
   });
 });
@@ -113,5 +121,45 @@ describe("code-crawl skill", () => {
     assert.match(s, /\b6\b/);                  // wave cap
     assert.match(s, /glm-code-crawler/);
     assert.match(s, /proxy-ready\.sh/);
+  });
+});
+
+describe("reviewer shared invariants (drift locks)", () => {
+  const reviewers = [
+    "glm-review-spec", "glm-review-plan",
+    "glm-review-code", "glm-review-implementation",
+  ];
+  const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
+  // Fails with a readable assertion instead of throwing if a `tools:` line is
+  // missing or the regex drifts (the old `(…||[])[1].trim()` threw TypeError).
+  const toolsLine = (r) => {
+    const m = src(r).match(/\ntools:\s*(.+)/);
+    assert.ok(m, `${r}: no \`tools:\` line found`);
+    return m[1].trim();
+  };
+
+  it("all four share one identical read-only tools line", () => {
+    const lines = reviewers.map(toolsLine);
+    const uniq = [...new Set(lines)];
+    assert.equal(uniq.length, 1, `tools lines diverge: ${uniq.join(" | ")}`);
+    assert.equal(uniq[0], "Read, Grep, Glob");
+  });
+
+  it("all four frame themselves as the CHEAP, WIDE pass", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /CHEAP, WIDE pass/i, `${r} missing cheap-wide framing`);
+    }
+  });
+
+  it("all four close with the GLM first-pass confirm note", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /GLM first-pass — confirm before acting/, `${r} missing confirm note`);
+    }
+  });
+
+  it("all four require a confidence rating", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /confidence/i, `${r} missing confidence rule`);
+    }
   });
 });

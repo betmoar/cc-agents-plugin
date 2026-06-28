@@ -1,7 +1,7 @@
 ---
 name: glm-review-spec
 description: Use when you explicitly want a cheap FIRST-PASS review of a spec or requirements document offloaded to GLM-5.2 via cc-proxy — checking for ambiguity, completeness, contradictions, and testability — keeping your stronger main model for the final call. Read-only. Give it the spec plus any related code or prior specs.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 model: glm-5.2[1m]
 ---
 
