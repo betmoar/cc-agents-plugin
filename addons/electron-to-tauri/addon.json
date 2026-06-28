@@ -1,0 +1,53 @@
+{
+  "name": "electron-to-tauri",
+  "title": "Electron to Tauri Migration",
+  "description": "A project-specific dev team that migrates an Electron desktop app to Tauri using a side-by-side strategy — reducing installer size ~90%, memory ~85%, and launch time ~85%. Frontend (React/Svelte) is kept; the Node.js backend is rewritten in Rust. 1:1 implementation of the offline-pixel Electron-to-Tauri migration guide.",
+  "version": "0.1.0",
+  "estimatedTimeline": "4-6 months",
+  "primaryRole": "tauri-engineer",
+  "source": "https://offline-pixel.github.io/migration-guides/electron-to-tauri-migration/",
+  "roles": [
+    {
+      "name": "migration-lead",
+      "title": "Lead Desktop Engineer",
+      "experience": "5+ years desktop / Electron",
+      "owns": "5-phase plan, assessment, target architecture, side-by-side strategy, go/no-go cutover, rollback decision, cost & success-metric tracking"
+    },
+    {
+      "name": "tauri-engineer",
+      "title": "Rust Developer (or frontend engineer learning Rust)",
+      "experience": "Basic Rust / strong systems background",
+      "owns": "Node.js → Rust rewrite, ipcRenderer.invoke → Tauri commands, fs → std::fs/tokio::fs, native modules → crates, emit/listen, LevelDB → SQLite data migration, Tauri security allowlist"
+    },
+    {
+      "name": "qa-engineer",
+      "title": "QA Engineer",
+      "experience": "Cross-platform desktop (Windows, macOS, Linux)",
+      "owns": "CI on all 3 OS / WebView differences, side-by-side functional parity tests, memory/launch/installer benchmarking, rollback verification, success-metric validation"
+    }
+  ],
+  "phases": [
+    { "id": "phase-1-foundation", "month": "1", "summary": "Set up Tauri project, migrate frontend build pipeline, train team on Rust, build side-by-side launcher." },
+    { "id": "phase-2-noncritical-features", "month": "2", "summary": "Migrate settings and about page — prove Tauri works, zero risk." },
+    { "id": "phase-3-core-features", "month": "3-4", "summary": "Migrate file system operations, system tray, notifications — 80% of functionality. Node→Rust rewrite + LevelDB→SQLite data migration." },
+    { "id": "phase-4-final-cutover", "month": "5", "summary": "Migrate remaining features, run side-by-side, remove Electron entirely after 2 months of zero rollbacks." }
+  ],
+  "entrySkill": "electron-to-tauri",
+  "components": {
+    "agents": [
+      "agents/migration-lead.md",
+      "agents/tauri-engineer.md",
+      "agents/qa-engineer.md"
+    ],
+    "skills": [
+      "skills/electron-to-tauri",
+      "skills/phase-1-foundation",
+      "skills/phase-2-noncritical-features",
+      "skills/phase-3-core-features",
+      "skills/phase-4-final-cutover"
+    ],
+    "commands": [
+      "commands/migrate.md"
+    ]
+  }
+}
