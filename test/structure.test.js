@@ -32,6 +32,14 @@ describe("agents", () => {
       assert.match(src, /\nmodel:\s*glm-5\.2\[1m\]/, `${r} wrong default model`);
     }
   });
+  it("the four reviewers carry no Bash (read-only least privilege)", () => {
+    for (const r of reviewers) {
+      const src = readFileSync(`agents/${r}.md`, "utf8");
+      const tools = (src.match(/\ntools:\s*(.+)/) || [])[1] || "";
+      assert.ok(!/\bBash\b/.test(tools), `${r} must not grant Bash`);
+      assert.ok(!/Write|Edit/.test(tools), `${r} must not grant Write/Edit`);
+    }
+  });
 });
 
 describe("glm-code-crawler agent", () => {

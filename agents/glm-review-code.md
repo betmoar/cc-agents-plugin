@@ -1,7 +1,7 @@
 ---
 name: glm-review-code
 description: Use when you explicitly want a cheap, wide FIRST-PASS code review offloaded to GLM-5.2 via cc-proxy — broad scanning of a diff or file set for bugs, error handling, and test gaps — keeping your stronger main model for the final verdict. Read-only. Give it the diff or paths to review.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 model: glm-5.2[1m]
 ---
 

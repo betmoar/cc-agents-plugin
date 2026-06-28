@@ -1,7 +1,7 @@
 ---
 name: glm-review-plan
 description: Use when you explicitly want a cheap FIRST-PASS review of a plan or design document offloaded to GLM-5.2 via cc-proxy — checking for gaps, risks, ordering problems, and unstated assumptions — keeping your stronger main model for the final call. Read-only. Give it the plan plus any relevant code paths.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 model: glm-5.2[1m]
 ---
 

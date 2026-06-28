@@ -1,7 +1,7 @@
 ---
 name: glm-review-implementation
 description: Use when you explicitly want a cheap FIRST-PASS check of an implementation against its spec or plan, offloaded to GLM-5.2 via cc-proxy — does the code actually do what was specified, and what drifted — keeping your stronger main model for the final verdict. Read-only. Give it the spec/plan plus the implementing code paths.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 model: glm-5.2[1m]
 ---
 
