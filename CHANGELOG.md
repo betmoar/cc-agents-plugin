@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 > Note: 0.1.1 bumped `plugin.json` to `0.1.1` but left `package.json` at `0.1.0`. This drift is reconciled in 0.1.2. 0.1.1 was not published as a git tag/release.
 
-## [0.1.2]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.1...v0.1.2
-## [0.1.1]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.0...v0.1.1
+[0.1.2]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.0...v0.1.1
 
 ## [0.1.0] — 2026-06-28
 

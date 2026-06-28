@@ -130,7 +130,13 @@ describe("reviewer shared invariants (drift locks)", () => {
     "glm-review-code", "glm-review-implementation",
   ];
   const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
-  const toolsLine = (r) => (src(r).match(/\ntools:\s*(.+)/) || [])[1].trim();
+  // Fails with a readable assertion instead of throwing if a `tools:` line is
+  // missing or the regex drifts (the old `(…||[])[1].trim()` threw TypeError).
+  const toolsLine = (r) => {
+    const m = src(r).match(/\ntools:\s*(.+)/);
+    assert.ok(m, `${r}: no \`tools:\` line found`);
+    return m[1].trim();
+  };
 
   it("all four share one identical read-only tools line", () => {
     const lines = reviewers.map(toolsLine);
