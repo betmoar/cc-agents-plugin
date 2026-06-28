@@ -123,3 +123,37 @@ describe("code-crawl skill", () => {
     assert.match(s, /proxy-ready\.sh/);
   });
 });
+
+describe("reviewer shared invariants (drift locks)", () => {
+  const reviewers = [
+    "glm-review-spec", "glm-review-plan",
+    "glm-review-code", "glm-review-implementation",
+  ];
+  const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
+  const toolsLine = (r) => (src(r).match(/\ntools:\s*(.+)/) || [])[1].trim();
+
+  it("all four share one identical read-only tools line", () => {
+    const lines = reviewers.map(toolsLine);
+    const uniq = [...new Set(lines)];
+    assert.equal(uniq.length, 1, `tools lines diverge: ${uniq.join(" | ")}`);
+    assert.equal(uniq[0], "Read, Grep, Glob");
+  });
+
+  it("all four frame themselves as the CHEAP, WIDE pass", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /CHEAP, WIDE pass/i, `${r} missing cheap-wide framing`);
+    }
+  });
+
+  it("all four close with the GLM first-pass confirm note", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /GLM first-pass — confirm before acting/, `${r} missing confirm note`);
+    }
+  });
+
+  it("all four require a confidence rating", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /confidence/i, `${r} missing confidence rule`);
+    }
+  });
+});
