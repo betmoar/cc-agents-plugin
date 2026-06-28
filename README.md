@@ -6,7 +6,7 @@ GLM-offload review agents with an auto-convened multi-lens review panel for spec
 
 ## Hard dependency: cc-proxy
 
-**This plugin requires the [`cc-proxy`](https://github.com/betmoar/cc-proxy) plugin to be running.** Every agent uses a `glm-*` model id, and those ids only resolve when cc-proxy is up — the proxy routes any `glm-*` id to Z.ai's Anthropic-compatible endpoint by prefix match. Without cc-proxy, all panel and crawl calls fail immediately.
+**This plugin requires the [`cc-proxy`](https://github.com/betmoar/cc-proxy-plugin) plugin to be running.** Every agent uses a `glm-*` model id, and those ids only resolve when cc-proxy is up — the proxy routes any `glm-*` id to Z.ai's Anthropic-compatible endpoint by prefix match. Without cc-proxy, all panel and crawl calls fail immediately.
 
 This dependency is **not auto-enforced**. The skills run an HTTP preflight (`proxy-ready.sh`, a short `curl` to the proxy port) before dispatching agents, and they will halt with a clear message if the proxy is unreachable. But the plugin does not start cc-proxy for you.
 
@@ -14,7 +14,7 @@ This dependency is **not auto-enforced**. The skills run an HTTP preflight (`pro
 
 ## Install
 
-1. Install and configure [cc-proxy](https://github.com/betmoar/cc-proxy) first. Confirm it is running (`cc-proxy` shows it listening on `127.0.0.1:4000` by default).
+1. Install and configure [cc-proxy](https://github.com/betmoar/cc-proxy-plugin) first. Confirm it is running (`cc-proxy` shows it listening on `127.0.0.1:4000` by default).
 2. Add this plugin to your Claude Code installation:
    ```
    /plugins add cc-agents
@@ -123,6 +123,6 @@ The `--revert` last-known-good snapshot (`cc-agents.lastgood`) is written to `.c
 
 ---
 
-## Duplicate agents with cc-proxy (resolved in 0.2.2)
+## Duplicate agents with cc-proxy (resolved in 0.3.0)
 
-cc-proxy versions **0.1.1 through 0.2.1** shipped their own `agents/` directory that duplicated six of these `glm-*` agents (the four reviewers plus `glm-brainstorm` and `glm-bulk-reader`; note `glm-code-crawler` was never duplicated). **cc-proxy 0.2.2 removed that directory**, so on the current cc-proxy there is no duplication. If you pin an older cc-proxy and also run cc-agents, you will see those six agents registered twice — disable one copy (rename the agents in one plugin, or remove the `agents/` directory from the cc-proxy installation you are using) to avoid the duplicate registrations.
+cc-proxy versions **0.1.1 through 0.2.2** shipped their own `agents/` directory that duplicated six of these `glm-*` agents (the four reviewers plus `glm-brainstorm` and `glm-bulk-reader`; note `glm-code-crawler` was never duplicated). **cc-proxy 0.3.0 moved those agents into this plugin**, so on the current cc-proxy there is no duplication. If you pin an older cc-proxy and also run cc-agents, you will see those six agents registered twice — disable one copy (rename the agents in one plugin, or remove the `agents/` directory from the cc-proxy installation you are using) to avoid the duplicate registrations.
