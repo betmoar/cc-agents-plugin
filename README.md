@@ -123,6 +123,6 @@ The `--revert` last-known-good snapshot (`cc-agents.lastgood`) is written to `.c
 
 ---
 
-## Follow-up: cc-proxy 0.3.0
+## Duplicate agents with cc-proxy (resolved in 0.2.2)
 
-cc-proxy 0.2.x ships its own `agents/` directory that duplicates all seven `glm-*` agents (the four reviewers plus `glm-brainstorm`, `glm-bulk-reader`, `glm-code-crawler`). When cc-proxy 0.3.0 removes that directory (planned), the duplication goes away. **Until then**, if you have both plugins installed, you will see duplicate `glm-*` agents. Disable one copy — either rename the agents in one plugin or remove the `agents/` directory from the cc-proxy installation you are using — to avoid the duplicate registrations.
+cc-proxy versions **0.1.1 through 0.2.1** shipped their own `agents/` directory that duplicated six of these `glm-*` agents (the four reviewers plus `glm-brainstorm` and `glm-bulk-reader`; note `glm-code-crawler` was never duplicated). **cc-proxy 0.2.2 removed that directory**, so on the current cc-proxy there is no duplication. If you pin an older cc-proxy and also run cc-agents, you will see those six agents registered twice — disable one copy (rename the agents in one plugin, or remove the `agents/` directory from the cc-proxy installation you are using) to avoid the duplicate registrations.
