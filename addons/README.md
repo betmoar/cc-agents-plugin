@@ -2,7 +2,9 @@
 
 **Addon packages** are project/type-specific *skillsets* — each one is a small **dev team**: a set of role **personas** (agents), **phase workflows** (skills), and **orchestration commands** that work together to carry a particular kind of project from start to finish.
 
-The plugin ships these packages as a **catalog** under `addons/`. They are *not* registered with the plugin itself; instead you **install** a package into a consuming project, which copies its components into that project's `./.claude/` directory so Claude Code discovers the team **for that project only**.
+Packages are distributed through a **central catalog** — a separate git repo (e.g. `betmoar/cc-agents-addons`) that you register once. Installing a package copies its components into a consuming project's `./.claude/` directory so Claude Code discovers the team **for that project only** ("skills, from a central catalog"). The `addons/` directory in *this* repo is an **offline seed / fallback** so the tooling works before any central catalog is configured; it is also where new packages are prototyped before they move to the catalog repo.
+
+> **Roadmap.** A native Claude Code **plugin-marketplace** path (`/plugin marketplace add …` → `/plugin install …@cc-agents-addons`, with per-project `enabledPlugins`) is planned as an additional, first-class distribution channel. The copy-into-`.claude/` installer below is the current path and will coexist with it.
 
 ```
 addons/
@@ -19,15 +21,23 @@ addons/
 Driven by the `/cc-agents:addon` command (wrapping `scripts/addon.sh`):
 
 ```
-/cc-agents:addon list                       # catalog packages (+ which are installed)
-/cc-agents:addon info electron-to-tauri     # show a package's manifest
-/cc-agents:addon install electron-to-tauri  # copy into ./.claude/
-/cc-agents:addon remove electron-to-tauri   # uninstall (exact, via tracked manifest)
+# one-time: register the central catalog (defaults to betmoar/cc-agents-addons)
+/cc-agents:addon catalog add                 # or: catalog add <owner/repo | git-url>
+/cc-agents:addon catalog update              # git-pull the catalog(s)
+/cc-agents:addon catalog list                # show configured catalogs
+
+# packages
+/cc-agents:addon list                        # packages across all catalogs (+ source, installed)
+/cc-agents:addon info electron-to-tauri      # show a package's manifest
+/cc-agents:addon install electron-to-tauri   # copy into ./.claude/
+/cc-agents:addon remove electron-to-tauri    # uninstall (exact, via tracked manifest)
 ```
 
+- **Resolution.** Packages resolve from central catalogs first, then the bundled `addons/` fallback — so a centrally-published package overrides the local seed.
+- **Catalog cache.** Central catalogs are cloned under `$XDG_CACHE_HOME/cc-agents/catalogs` (override with `CC_AGENTS_CATALOG_CACHE`). A catalog repo may keep packages at its root or under `addons/`.
 - **Target.** Installs go to `$CLAUDE_PROJECT_DIR/.claude` (or `$PWD/.claude`); override with `CC_AGENTS_TARGET`.
 - **Conflicts.** Install refuses to overwrite existing files; re-run with `--force` to overwrite.
-- **Tracking.** Each install records the exact files it wrote under `.claude/.cc-agents-addons/<name>.files`, so `remove` deletes precisely what it added (and prunes emptied directories).
+- **Tracking.** Each install records the exact files it wrote (and the source catalog path) under `.claude/.cc-agents-addons/<name>.files`, so `remove` deletes precisely what it added (and prunes emptied directories).
 
 ### Consuming-project `.gitignore`
 

@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { describe, it, before, after } from "node:test";
 import { execFileSync } from "node:child_process";
 import {
-  readFileSync, readdirSync, existsSync, mkdtempSync, rmSync, statSync,
+  readFileSync, readdirSync, existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -131,7 +131,7 @@ describe("addon.sh installer", () => {
   });
 
   it("list marks the package installed afterward", () => {
-    assert.match(run(["list"], env()), /electron-to-tauri\s+\[installed\]/);
+    assert.match(run(["list"], env()), /electron-to-tauri.*\[installed\]/);
   });
 
   it("install refuses to overwrite without --force", () => {
@@ -163,5 +163,40 @@ describe("addon.sh installer", () => {
     try { run(["install", "does-not-exist"], env()); }
     catch (e) { threw = true; assert.match(e.stderr || "", /no such package/); }
     assert.ok(threw);
+  });
+});
+
+describe("addon.sh central catalog resolution", () => {
+  let cache, target;
+  before(() => {
+    cache = mkdtempSync(join(tmpdir(), "cc-cat-"));
+    target = mkdtempSync(join(tmpdir(), "cc-tgt-"));
+    // A fake central catalog with packages under addons/ (like a cloned repo).
+    const pkg = join(cache, "fakecat", "addons", "demo-pkg");
+    mkdirSync(join(pkg, "agents"), { recursive: true });
+    writeFileSync(join(pkg, "addon.json"), '{ "name": "demo-pkg" }\n');
+    writeFileSync(join(pkg, "agents", "demo.md"), "---\nname: demo\ndescription: d\n---\n");
+  });
+  after(() => {
+    rmSync(cache, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  });
+  const env = () => ({ CC_AGENTS_CATALOG_CACHE: cache, CC_AGENTS_TARGET: target });
+
+  it("list shows both central and bundled packages with their source", () => {
+    const out = run(["list"], env());
+    assert.match(out, /demo-pkg\s+\(fakecat\)/);
+    assert.match(out, /electron-to-tauri\s+\(bundled\)/);
+  });
+
+  it("installs a package resolved from the central catalog", () => {
+    const out = run(["install", "demo-pkg"], env());
+    assert.match(out, /installed 'demo-pkg'/);
+    assert.match(out, /from .*fakecat/);
+    assert.ok(existsSync(join(target, ".claude", "agents", "demo.md")));
+  });
+
+  it("catalog list reports the bundled root", () => {
+    assert.match(run(["catalog", "list"], env()), /bundled:/);
   });
 });

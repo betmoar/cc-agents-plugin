@@ -67,18 +67,19 @@ Rewrite the `model:` frontmatter in the `glm-code-crawler` agent only.
 - `--no-probe` — skip the liveness probe; accept any shape-valid id without contacting the proxy.
 - `--revert` — restore the last-known-good model id from `.claude/cc-agents.lastgood`.
 
-### `/cc-agents:addon <list|info|install|remove> [name]`
+### `/cc-agents:addon <list|info|install|remove|catalog> [name]`
 
-Manage **addon packages** — project/type-specific dev teams shipped under the plugin's `addons/` catalog (see [Addon packages](#addon-packages)). Installing a package copies its personas/skills/commands into the current project's `./.claude/`.
+Manage **addon packages** — project/type-specific dev teams distributed through a **central catalog** repo (see [Addon packages](#addon-packages)). Installing a package copies its personas/skills/commands into the current project's `./.claude/`.
 
 ```
-/cc-agents:addon list                       # catalog packages (+ which are installed)
-/cc-agents:addon info electron-to-tauri     # show a package's manifest
-/cc-agents:addon install electron-to-tauri  # copy into ./.claude/ (--force to overwrite)
-/cc-agents:addon remove electron-to-tauri   # uninstall (exact, via tracked manifest)
+/cc-agents:addon catalog add                 # register the central catalog (default: betmoar/cc-agents-addons)
+/cc-agents:addon list                        # packages across catalogs (+ source, installed)
+/cc-agents:addon info electron-to-tauri      # show a package's manifest
+/cc-agents:addon install electron-to-tauri   # copy into ./.claude/ (--force to overwrite)
+/cc-agents:addon remove electron-to-tauri    # uninstall (exact, via tracked manifest)
 ```
 
-This command does not touch cc-proxy and works without it.
+Packages resolve from central catalogs first, then the plugin-bundled `addons/` fallback. This command does not touch cc-proxy and works without it.
 
 ---
 
@@ -120,9 +121,11 @@ Fans a large path/glob set out across parallel `glm-code-crawler` shards (~150K 
 
 ## Addon packages
 
-Beyond the GLM review tooling, cc-agents ships **addon packages** — project/type-specific *skillsets*, each a small **dev team** of role personas (agents), phase workflows (skills), and orchestration commands that work together to carry a particular kind of project end to end.
+Beyond the GLM review tooling, cc-agents supports **addon packages** — project/type-specific *skillsets*, each a small **dev team** of role personas (agents), phase workflows (skills), and orchestration commands that work together to carry a particular kind of project end to end.
 
-Packages live in the [`addons/`](addons/) catalog and are **not** registered with the plugin. You install one into a consuming project with `/cc-agents:addon install <name>`, which copies its components into that project's `./.claude/` so Claude Code discovers the team **for that project only**. Removal is exact — each install records the files it wrote under `.claude/.cc-agents-addons/<name>.files`. These personas run on the **session model** (they don't depend on cc-proxy), unlike the `glm-*` review agents above.
+Packages are distributed through a **central catalog** — a separate git repo (e.g. `betmoar/cc-agents-addons`) you register once with `/cc-agents:addon catalog add`. The [`addons/`](addons/) directory in *this* repo is an offline seed / fallback and where packages are prototyped before they move to the catalog repo. You install a package into a consuming project with `/cc-agents:addon install <name>`, which copies its components into that project's `./.claude/` so Claude Code discovers the team **for that project only**. Removal is exact — each install records the files it wrote under `.claude/.cc-agents-addons/<name>.files`. These personas run on the **session model** (they don't depend on cc-proxy), unlike the `glm-*` review agents above.
+
+A native Claude Code **plugin-marketplace** distribution path (`/plugin marketplace add …` with per-project `enabledPlugins`) is planned as an additional channel; the copy-into-`.claude/` installer is the current path and will coexist with it.
 
 | Package | What it does | Roles | Timeline |
 |---|---|---|---|
