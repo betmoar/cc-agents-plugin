@@ -69,6 +69,20 @@ Rewrite the `model:` frontmatter in the `glm-code-crawler` agent only.
 - `--no-probe` — skip the liveness probe; accept any shape-valid id without contacting the proxy.
 - `--revert` — restore the last-known-good model id from `.claude/cc-agents.lastgood`.
 
+### `/cc-agents:addon <list|info|install|remove|catalog> [name]`
+
+Manage **addon packages** — project/type-specific dev teams distributed through a **central catalog** repo (see [Addon packages](#addon-packages)). Installing a package copies its personas/skills/commands into the current project's `./.claude/`.
+
+```
+/cc-agents:addon catalog add                 # register the central catalog (default: betmoar/cc-agents-addons)
+/cc-agents:addon list                        # packages across catalogs (+ source, installed)
+/cc-agents:addon info electron-to-tauri      # show a package's manifest
+/cc-agents:addon install electron-to-tauri   # copy into ./.claude/ (--force to overwrite)
+/cc-agents:addon remove electron-to-tauri    # uninstall (exact, via tracked manifest)
+```
+
+Packages resolve from central catalogs first, then the plugin-bundled `addons/` fallback. This command does not touch cc-proxy and works without it.
+
 ---
 
 ## Skills
@@ -107,15 +121,32 @@ Fans a large path/glob set out across parallel `glm-code-crawler` shards (~150K 
 
 ---
 
+## Addon packages
+
+Beyond the GLM review tooling, cc-agents supports **addon packages** — project/type-specific *skillsets*, each a small **dev team** of role personas (agents), phase workflows (skills), and orchestration commands that work together to carry a particular kind of project end to end.
+
+Packages are distributed through a **central catalog** — a separate git repo (e.g. `betmoar/cc-agents-addons`) you register once with `/cc-agents:addon catalog add`. The [`addons/`](addons/) directory in *this* repo is an offline seed / fallback and where packages are prototyped before they move to the catalog repo. You install a package into a consuming project with `/cc-agents:addon install <name>`, which copies its components into that project's `./.claude/` so Claude Code discovers the team **for that project only**. Removal is exact — each install records the files it wrote under `.claude/.cc-agents-addons/<name>.files`. These personas run on the **session model** (they don't depend on cc-proxy), unlike the `glm-*` review agents above.
+
+A native Claude Code **plugin-marketplace** distribution path (`/plugin marketplace add …` with per-project `enabledPlugins`) is planned as an additional channel; the copy-into-`.claude/` installer is the current path and will coexist with it.
+
+| Package | What it does | Roles | Timeline |
+|---|---|---|---|
+| [`electron-to-tauri`](addons/electron-to-tauri/) | Migrate an Electron desktop app to Tauri (side-by-side, frontend kept, Node→Rust). 1:1 of the offline-pixel guide. | `migration-lead`, `tauri-engineer`, `qa-engineer` | 4-6 months |
+
+See [`addons/README.md`](addons/README.md) for the package format and how to author a new one.
+
+---
+
 ## Consuming-project `.gitignore`
 
 These paths are per-project runtime state and should not be committed. Add them to the `.gitignore` in **each project** that uses cc-agents:
 
 ```gitignore
 **/.review-panel/
+.claude/.cc-agents-addons/
 ```
 
-`.review-panel/` directories hold panel-ran markers and should not be committed.
+`.review-panel/` directories hold panel-ran markers, and `.cc-agents-addons/` holds addon install manifests; neither should be committed.
 
 The `--revert` last-known-good snapshot (`cc-agents.lastgood`) is written to `.claude/cc-agents.lastgood` **inside the plugin repository itself** (resolved relative to the script's location, not the consuming project). If you are developing the plugin from source and want to keep it out of the plugin repo's git history, add the following to the plugin repo's `.gitignore`:
 
