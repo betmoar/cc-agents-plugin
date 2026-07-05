@@ -63,8 +63,12 @@ case "$target" in
       rev_models+=("$m")
     done < <(tail -n +2 "$LASTGOOD")
     # An empty/truncated record means the snapshot was corrupted — refuse
-    # rather than "reverting" zero files and reporting success.
-    if [ -z "${rev_files[*]+x}" ]; then
+    # rather than "reverting" zero files and reporting success. Use an element
+    # COUNT, not `${rev_files[*]+x}`: the `+` set/unset test on an empty array
+    # is version-dependent (differs on bash 3.2, which this script targets), so
+    # it could read as "set" and skip the check. `${#arr[@]}` is unambiguous
+    # everywhere and safe under `set -u`.
+    if [ "${#rev_files[@]}" -eq 0 ]; then
       echo "last-known-good record is empty or corrupt ($LASTGOOD) — nothing reverted." >&2
       exit 1
     fi
