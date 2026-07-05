@@ -1,7 +1,10 @@
 import { strict as assert } from "node:assert";
 import { describe, it, before, after } from "node:test";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
+import { mkdtempSync, symlinkSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Deterministic gate for hooks/proxy-ready.sh. Regression guard for the macOS
 // portability bug where the probe used `timeout` (absent on macOS) and so
@@ -47,5 +50,28 @@ describe("proxy-ready.sh", () => {
   it("exits 1 with no listener (proxy down)", async () => {
     // Port 1 is privileged and not listening in CI/dev → connection refused.
     assert.equal(await runProbe(1), 1);
+  });
+
+  // FAIL-CLOSED drift-lock: with curl absent, `curl` exits 127 (command not
+  // found) — neither 7 nor 28 — and the old probe reported the proxy UP on a
+  // system that cannot probe at all. It must fail closed instead.
+  it("exits 1 when curl is not on PATH (fail closed, not open)", async () => {
+    const fakebin = mkdtempSync(join(tmpdir(), "ccagents-nocurl-"));
+    try {
+      const bashPath = execFileSync("bash", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
+      symlinkSync(bashPath, join(fakebin, "bash"));
+      const code = await new Promise((resolve) => {
+        execFile(
+          "bash",
+          ["hooks/proxy-ready.sh"],
+          { env: { PATH: fakebin, PROXY_PORT: String(livePort) } },
+          (err) => resolve(err ? err.code : 0),
+        );
+      });
+      // Proxy is genuinely UP (livePort), but with no curl we must still say no.
+      assert.equal(code, 1);
+    } finally {
+      rmSync(fakebin, { recursive: true, force: true });
+    }
   });
 });

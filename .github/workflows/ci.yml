@@ -1,0 +1,26 @@
+name: ci
+
+# Gate every push and PR on the full test suite + shell lint.
+# The tests are drift-locks: they pin security and coupling invariants
+# (frontmatter-injection rejection, fail-closed preflight, marker-path
+# coupling, version sync). A red run here means an invariant broke —
+# fix the code, do not delete the test.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit + drift-lock tests
+        run: node --test
+      - name: Shell lint
+        run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update && sudo apt-get install -y shellcheck; }
+          shellcheck hooks/*.sh scripts/*.sh

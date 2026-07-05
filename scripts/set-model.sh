@@ -62,13 +62,21 @@ case "$target" in
       rev_files+=("$f")
       rev_models+=("$m")
     done < <(tail -n +2 "$LASTGOOD")
+    # An empty/truncated record means the snapshot was corrupted — refuse
+    # rather than "reverting" zero files and reporting success.
+    if [ -z "${rev_files[*]+x}" ]; then
+      echo "last-known-good record is empty or corrupt ($LASTGOOD) — nothing reverted." >&2
+      exit 1
+    fi
     # First pass: render every target into a temp file; abort cleanly on any failure.
+    # (${arr[@]+...} guards: expanding an EMPTY array under `set -u` is fatal on
+    # bash 3.2, which is what stock macOS ships. Same idiom in the write path.)
     rev_tmps=()
     for i in "${!rev_files[@]}"; do
       tmp="$(mktemp)"
       if ! fm_rewrite "${rev_models[$i]}" "${rev_files[$i]}" "$tmp"; then
         rm -f "$tmp"
-        for t in "${rev_tmps[@]}"; do rm -f "$t"; done
+        for t in ${rev_tmps[@]+"${rev_tmps[@]}"}; do rm -f "$t"; done
         echo "revert render failed — no files changed." >&2
         exit 1
       fi
@@ -85,13 +93,44 @@ esac
 
 [ -n "$id" ] || { echo "usage: set-model.sh [--crawler] [--no-probe] <model-id> | --revert" >&2; exit 2; }
 
-# 1. Shape check: glm- prefix OR an OpenRouter-namespaced id (contains a slash).
+# 1. Shape check, two parts.
+#    a) Safe charset. This is a security check, not pedantry: the id is written
+#       into agent YAML frontmatter via `awk -v`, which interprets backslash
+#       escapes — an id containing a newline OR a literal `\n` becomes an extra
+#       frontmatter line (e.g. `tools: Bash`), silently escalating a
+#       least-privilege agent. The id is also spliced into the probe's JSON
+#       body, where quotes/backslashes would break or smuggle fields.
+#       NOTE: this must be a whole-string match. grep matches PER LINE, so a
+#       multi-line id would pass grep if its first line looked valid — bash
+#       `case` matches the string as one unit, newlines included.
+case "$id" in
+  *[!]A-Za-z0-9._:/[-]*)
+    echo "rejected: '$id' contains characters outside [A-Za-z0-9._:/[]-] (whitespace, quotes, and backslashes are never valid in a model id)." >&2
+    exit 1
+    ;;
+esac
+#    b) Routing rule: glm- prefix OR an OpenRouter-namespaced id (contains a slash).
 if ! printf '%s' "$id" | grep -Eq '^glm-|/'; then
   echo "rejected: '$id' is not a routable model id (need glm-* or vendor/model)." >&2
   exit 1
 fi
 
-# 2. Liveness probe (unless skipped).
+# 2. Pre-validate every target file BEFORE the probe and BEFORE touching the
+#    last-known-good record. A missing file or missing `model:` line used to
+#    abort mid-way through writing LASTGOOD, truncating the previous good
+#    record — destroying --revert exactly when it was needed.
+for f in "${files[@]}"; do
+  if [ ! -f "$f" ]; then
+    echo "missing agent file: $f — no files changed." >&2
+    exit 1
+  fi
+  if ! grep -Eq '^model:' "$f"; then
+    echo "no 'model:' frontmatter line in $f — no files changed." >&2
+    exit 1
+  fi
+done
+
+# 3. Liveness probe (unless skipped).
 #    CC_AGENTS_PROBE_CMD is a trusted test seam — eval'd as-is (stub, not user input).
 #    The production path passes $id as a literal curl argument, never through eval.
 if [ "$probe" -eq 1 ]; then
@@ -114,17 +153,21 @@ if [ "$probe" -eq 1 ]; then
   fi
 fi
 
-# 3. Record last-known-good BEFORE writing (target + each file's current model).
+# 4. Record last-known-good BEFORE writing (target + each file's current model).
+#    Rendered to a temp file and moved into place so a failure can never leave
+#    a truncated LASTGOOD behind (the previous record survives intact).
 mkdir -p "$(dirname "$LASTGOOD")"
+lg_tmp="$(mktemp)"
 {
   echo "$target"
   for f in "${files[@]}"; do
     cur="$(grep -E '^model:' "$f" | head -1 | sed 's/^model:[[:space:]]*//')"
     printf '%s\t%s\n' "$f" "$cur"
   done
-} > "$LASTGOOD"
+} > "$lg_tmp"
+mv "$lg_tmp" "$LASTGOOD"
 
-# 4. Two-pass write: first render all targets into temp files,
+# 5. Two-pass write: first render all targets into temp files,
 #    then (only after all renders succeed) rename each into place.
 #    If ANY render fails, all temp files are deleted and no original is touched.
 tmps=()
@@ -132,7 +175,7 @@ for f in "${files[@]}"; do
   tmp="$(mktemp)"
   if ! fm_rewrite "$id" "$f" "$tmp"; then
     rm -f "$tmp"
-    for t in "${tmps[@]}"; do rm -f "$t"; done
+    for t in ${tmps[@]+"${tmps[@]}"}; do rm -f "$t"; done
     echo "write failed — no files changed." >&2
     exit 1
   fi

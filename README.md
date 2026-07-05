@@ -33,7 +33,9 @@ After every file write or edit, the `spec-plan-suggest.sh` PostToolUse hook insp
 
 When a match fires, the hook injects an **advisory** `additionalContext` message suggesting the main model convene the `review-panel` skill on the written file. This is best-effort — the hook never blocks execution, never errors fatally, and the suggestion can be overridden by the user.
 
-When the panel runs, it writes a per-run report at `docs/superpowers/specs/.review-panel/<artifact-basename>.md` (see [Skills](#skills) below). That file doubles as the panel-ran marker: no file means the panel was never convened.
+When the panel runs, it writes a per-run report at `<artifact-dir>/.review-panel/<artifact-basename>.md` — a `.review-panel/` directory next to the reviewed artifact (see [Skills](#skills) below). That file doubles as the panel-ran marker: no file means the panel was never convened.
+
+The hook checks that marker path: if a run report already exists for the written artifact, the suggestion changes to "re-convene only if the substance changed" — this prevents a feedback loop where the panel's own append of the `## Clarifications` section re-triggers a fresh panel.
 
 ---
 
@@ -85,7 +87,7 @@ Findings below a score of 50 are dropped. Survivors are grouped as `must-resolve
 
 **Clarifying questions.** The `should-clarify` findings — the genuinely open/ambiguous items — are posed back to you as interactive `AskUserQuestion` prompts (up to 4 per run, top-scored first). Your answers are appended to the reviewed artifact as a non-destructive `## Clarifications (date)` section; the original prose is never rewritten. `must-resolve` (contradictions/bugs to fix) and `consider` items are reported, not asked.
 
-**Per-run report.** Each panel run writes a full record at `docs/superpowers/specs/.review-panel/<artifact-basename>.md` — which lenses ran, every finding with its score and bucket, what was asked and how you answered, the verdict, and per-agent token cost (when reported). This file is also the panel-ran marker: no file means the panel never ran on that artifact.
+**Per-run report.** Each panel run writes a full record at `<artifact-dir>/.review-panel/<artifact-basename>.md` — which lenses ran, every finding with its score and bucket, what was asked and how you answered, the verdict, and per-agent token cost (when reported). This file is also the panel-ran marker: no file means the panel never ran on that artifact.
 
 Triggered automatically by the PostToolUse hook, or invoke directly:
 
