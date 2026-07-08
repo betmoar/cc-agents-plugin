@@ -84,6 +84,63 @@ describe("set-model.sh", () => {
     run(["--no-probe", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "false" });
     assert.equal(modelOf("glm-review-spec"), "glm-4.6");
   });
+
+  // SECURITY drift-lock: the id is written into agent frontmatter via `awk -v`,
+  // which interprets backslash escapes. Without the charset shape check, BOTH a
+  // real newline and a literal "\n" in the id inject an extra frontmatter line
+  // (e.g. `tools: Bash`) — escalating a least-privilege agent. These ids must
+  // be rejected before any file is touched, even with --no-probe.
+  it("rejects an id containing a real newline (frontmatter injection)", () => {
+    assert.throws(() => run(["--no-probe", "glm-x\ntools: Bash"]));
+    for (const r of REVIEWERS) {
+      assert.equal(modelOf(r), "glm-5.2[1m]");
+      assert.ok(!readFileSync(join(dir, "agents", `${r}.md`), "utf8").includes("tools: Bash"));
+    }
+  });
+
+  it("rejects an id containing a literal backslash-n (awk -v escape injection)", () => {
+    assert.throws(() => run(["--no-probe", "glm-x\\ntools: Bash"]));
+    for (const r of REVIEWERS) {
+      assert.equal(modelOf(r), "glm-5.2[1m]");
+    }
+  });
+
+  it("rejects ids containing quotes (would break/smuggle the probe JSON body)", () => {
+    assert.throws(() => run(['--no-probe', 'vendor/mo"del']));
+    assert.equal(modelOf("glm-review-spec"), "glm-5.2[1m]");
+  });
+
+  it("still accepts the bracketed default id glm-5.2[1m]", () => {
+    run(["--no-probe", "glm-5.2[1m]"], {});
+    assert.equal(modelOf("glm-review-spec"), "glm-5.2[1m]");
+  });
+
+  // Transactional drift-lock: a target file missing its `model:` line must
+  // abort BEFORE the last-known-good record is touched. It used to abort
+  // mid-write, truncating the previous record and destroying --revert.
+  it("a corrupt agent file aborts without clobbering the previous lastgood", () => {
+    const lastgood = join(dir, "lastgood");
+    const spec = join(dir, "agents", "glm-review-spec.md");
+    writeFileSync(lastgood, `reviewers\n${spec}\tglm-OLD\n`);
+    // Strip the model: line from one reviewer.
+    const code = join(dir, "agents", "glm-review-code.md");
+    writeFileSync(code, readFileSync(code, "utf8").replace(/^model:.*\n/m, ""));
+
+    assert.throws(() => run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }));
+    // Previous lastgood intact, byte for byte…
+    assert.equal(readFileSync(lastgood, "utf8"), `reviewers\n${spec}\tglm-OLD\n`);
+    // …and --revert still works off it.
+    run(["--revert"]);
+    assert.equal(modelOf("glm-review-spec"), "glm-OLD");
+  });
+
+  it("--revert refuses an empty/truncated lastgood instead of reporting success", () => {
+    writeFileSync(join(dir, "lastgood"), "reviewers\n");
+    assert.throws(
+      () => run(["--revert"]),
+      (e) => /empty or corrupt/.test(String(e.stderr ?? e.message)),
+    );
+  });
 });
 
 // Production-path regression: no CC_AGENTS_AGENTS_DIR — BASH_SOURCE resolution must work.
