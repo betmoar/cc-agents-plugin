@@ -21,6 +21,21 @@ describe("plugin manifest", () => {
   });
 });
 
+describe("marketplace manifest", () => {
+  // COUPLING drift-lock: the standalone-install marketplace advertises the
+  // plugin at repo root. Its plugin entry name and source must stay in sync
+  // with plugin.json so `/plugin install cc-agents@cc-agents-plugin` resolves.
+  it("advertises cc-agents at source ./ matching plugin.json", () => {
+    const mk = JSON.parse(readFileSync(".claude-plugin/marketplace.json", "utf8"));
+    const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8"));
+    assert.ok(Array.isArray(mk.plugins) && mk.plugins.length >= 1);
+    const entry = mk.plugins.find((p) => p.name === plugin.name);
+    assert.ok(entry, `marketplace has no entry named ${plugin.name}`);
+    assert.equal(entry.source, "./", "plugin lives at repo root — source must be ./");
+    assert.ok(mk.name && mk.owner && mk.owner.name, "marketplace missing name/owner");
+  });
+});
+
 describe("agents", () => {
   const reviewers = [
     "glm-review-spec", "glm-review-plan",

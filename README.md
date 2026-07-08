@@ -17,10 +17,21 @@ This dependency is **not auto-enforced**. The skills run an HTTP preflight (`pro
 ## Install
 
 1. Install and configure [cc-proxy](https://github.com/betmoar/cc-proxy-plugin) first. Confirm it is running (`cc-proxy` shows it listening on `127.0.0.1:4000` by default).
-2. Add this plugin to your Claude Code installation:
+2. Add this plugin's marketplace and install it.
+
+   From a local checkout:
    ```
-   /plugins add cc-agents
+   /plugin marketplace add /path/to/cc-agents-plugin
+   /plugin install cc-agents@cc-agents-plugin
    ```
+
+   Or straight from GitHub:
+   ```
+   /plugin marketplace add betmoar/cc-agents-plugin
+   /plugin install cc-agents@cc-agents-plugin
+   ```
+
+   Both target this repo's own `.claude-plugin/marketplace.json`. Once a central marketplace is published, `cc-agents` will also be installable from there — the plugin name (`cc-agents`) is identical, only the `@<marketplace>` suffix changes.
 
 ---
 

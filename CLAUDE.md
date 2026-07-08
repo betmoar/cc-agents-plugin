@@ -75,6 +75,20 @@ State lives in exactly two places, both files:
    deliberate (see Landmines #4); drift-lock tests pin it.
 6. **`hooks/hooks.json`** — one entry. If the matcher drifts from
    `Write|Edit`, the whole auto-panel feature silently stops firing.
+7. **`scripts/release-gate.mjs` + `.github/workflows/release.yml`** — the
+   release boundary. The gate refuses to ship unless
+   `tag == plugin.json == package.json == newest CHANGELOG heading`, and emits
+   the tag's CHANGELOG section as the release body (`--notes-out`). `release.yml`
+   is the *only* place `gh release create` runs; it fires on `v*` tag push only.
+   Note `.github/workflows/` is often write-protected for agents — expect to
+   place workflow files by hand. Gate logic is drift-locked by
+   `test/release-gate.test.js` against throwaway fixtures (so it survives every
+   version bump); its `CHANGELOG_HEADING_RE`/`TAG_RE` are the single source of
+   truth for both halves of the coupling.
+8. **`.claude-plugin/marketplace.json`** — standalone-install fallback. Its
+   plugin entry (`name` + `source: "./"`) must match `plugin.json`'s name, or
+   `/plugin install cc-agents@cc-agents-plugin` won't resolve. Coupled by a
+   `test/structure.test.js` drift-lock.
 
 ## Couplings — if you touch X, update Y
 
@@ -84,7 +98,9 @@ State lives in exactly two places, both files:
 | Reviewer default model `glm-5.2[1m]` | README default, `test/structure.test.js` default-model test — and it must survive `set-model.sh`'s charset whitelist |
 | Crawler default `glm-5-turbo` | README, structure test, `code-crawl` SKILL.md (names the tier twice) |
 | Reviewer agent list (add/remove) | `REVIEWERS=` in set-model.sh, reviewer arrays in structure + set-model tests, README, review-panel SKILL step 1 |
-| Version | `plugin.json` AND `package.json` (test enforces) + CHANGELOG entry |
+| Version | `plugin.json` AND `package.json` (test enforces) + newest `## [x.y.z]` CHANGELOG heading (release-gate enforces at tag time) |
+| Plugin name / repo-root layout | `.claude-plugin/marketplace.json` entry (`name` + `source: "./"`), `test/structure.test.js` marketplace test, README install block |
+| Release gate coupling (tag/version/heading semantics) | `scripts/release-gate.mjs` (the `TAG_RE`/`CHANGELOG_HEADING_RE` logic) + `test/release-gate.test.js` + `release.yml` step name + this file |
 | Skill knobs (N, lenses, 50-threshold, 150K shard, wave cap 6) | structure.test.js pins the literals — update both, and README where echoed |
 | proxy probe semantics | `test/proxy-ready.test.js` + README "Hard dependency" section |
 
@@ -154,10 +170,20 @@ never move the report-write after the artifact-append; keep every literal the
 structure tests pin in sync.
 
 ### Release
-1. Bump `plugin.json` + `package.json` together (test enforces), add a
-   CHANGELOG entry (Keep-a-Changelog style, compare links at the bottom).
-2. `node --test && npm run lint` — must be green locally; CI repeats it.
-3. Tag `vX.Y.Z` on main after merge.
+1. Bump `plugin.json` + `package.json` together (test enforces), and make the
+   `## [x.y.z]` entry the newest heading in `CHANGELOG.md` (Keep-a-Changelog
+   style, compare links at the bottom). All three must equal the tag you'll cut.
+2. Dry-run the gate locally: `node scripts/release-gate.mjs vX.Y.Z` — it must
+   print `release gate OK`. `node --test && npm run lint` must be green (CI
+   repeats both).
+3. Merge to `main`, then push tag `vX.Y.Z`. `release.yml` re-runs the gate +
+   full suite and publishes the GitHub release with the CHANGELOG section as its
+   body. Nothing else runs `gh release create`; do not publish by hand.
+   - The gate is *fail-closed*: a tag whose version doesn't match all three
+     sources fails the build and no release is cut. Fix the version (or the tag)
+     and re-tag.
+   - `.github/workflows/` may be write-locked for agents — a human places/edits
+     `release.yml`.
 
 ### Debug "the panel won't run"
 In order: (1) is cc-proxy up — `bash hooks/proxy-ready.sh; echo $?`;

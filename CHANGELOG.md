@@ -58,8 +58,22 @@ Hardening + handoff release: every fix below is pinned by a new drift-lock test.
   a "No such file or directory" is not misread as "proxy down".
 
 ### Added
-- **CI:** GitHub Actions workflow running `node --test` + shellcheck on every
-  push/PR — the suite previously ran only when someone remembered to.
+- **CI:** GitHub Actions workflow (`ci.yml`) running `node --test` + shellcheck
+  on every push/PR — the suite previously ran only when someone remembered to.
+- **Release automation:** `release.yml` fires on a `v*` tag push and gates the
+  build through `scripts/release-gate.mjs`, which fails unless
+  `tag == plugin.json == package.json == newest CHANGELOG heading`; on success
+  it re-runs the full test + lint gate and publishes a GitHub release whose body
+  is that version's CHANGELOG section (notes are the changelog, not a
+  hand-written duplicate). Gate logic is drift-locked by
+  `test/release-gate.test.js` against throwaway fixtures.
+- **Standalone marketplace fallback:** `.claude-plugin/marketplace.json` lets
+  the plugin install directly from a local checkout or the GitHub repo
+  (`/plugin marketplace add betmoar/cc-agents-plugin` →
+  `/plugin install cc-agents@cc-agents-plugin`) without a central marketplace.
+  Its entry (name + `source: "./"`) is coupled to `plugin.json` by a structure
+  drift-lock. README install section updated to this flow (was the incorrect
+  `/plugins add cc-agents`).
 - **`CLAUDE.md` maintainer handoff:** mental model, load-bearing inventory,
   touch-X-update-Y coupling table, landmines with rationale, playbooks
   (add an agent / tune the panel / release / debug), prioritized backlog.
@@ -69,7 +83,8 @@ Hardening + handoff release: every fix below is pinned by a new drift-lock test.
   fail-closed preflight; hook silence without node.
 
 ### Tests
-- Gate: `node --test` → **45 pass / 0 fail** (was 32) · `shellcheck` clean.
+- Gate: `node --test` → **53 pass / 0 fail** (was 32) · `shellcheck` clean.
+  (+7 release-gate fixtures, +1 marketplace coupling over the 45 at first cut.)
 
 [0.2.0]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.2...v0.2.0
 
