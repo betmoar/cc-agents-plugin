@@ -4,6 +4,13 @@
 # down proxy fails fast with a clear message instead of opaque per-call errors.
 set -uo pipefail
 PORT="${PROXY_PORT:-4000}"
+# Fail CLOSED if curl itself is missing: without this, `curl: command not
+# found` (exit 127) is neither 7 nor 28 below and the probe would report the
+# proxy UP on a system that cannot probe at all.
+if ! command -v curl >/dev/null 2>&1; then
+  echo "proxy preflight cannot run: curl not found on PATH — install curl, then retry." >&2
+  exit 1
+fi
 # Probe with curl (already a plugin dependency via set-model.sh). We only care
 # whether the proxy is LISTENING, not what it returns — any HTTP response (200,
 # 404, 401, ...) proves it's up. curl exit 7 = connection refused, 28 = timeout

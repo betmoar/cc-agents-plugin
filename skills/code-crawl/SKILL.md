@@ -22,6 +22,8 @@ Read a large path/glob set fast by sharding it across parallel `glm-code-crawler
 
    Non-zero exit → STOP and tell the user to start cc-proxy.
 
+   (If `${CLAUDE_PLUGIN_ROOT}` is unset in your shell, the script is at `<plugin-root>/hooks/proxy-ready.sh` — the plugin root is two directories above this SKILL.md file. A "No such file or directory" error means the variable was unset, NOT that the proxy is down.)
+
 2. **Enumerate & shard.** Expand the target paths/globs to a concrete file list (use `ls`/`find`/Glob). Greedily pack files into shards up to the ~150K-char budget, keeping each whole. Record which files landed in each shard.
 
 3. **Dispatch in waves of ≤ 6.** Dispatch up to 6 `glm-code-crawler` Agent calls in one message, each given the explicit file list for its shard plus the crawl question. **Await the wave**, then dispatch the next 6, until all shards are done. Never drop shards — extra shards are a later wave, not a truncation. If you must cap total work, say so explicitly to the user.
