@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Transactionally rewrite the `model:` frontmatter line in cc-agents agents.
 #
-#   set-model.sh <id>              rewrite the 4 reviewers
+#   set-model.sh <id>              rewrite the 2 reviewers
 #   set-model.sh --crawler <id>    rewrite glm-code-crawler only
 #   set-model.sh --revert          restore from the last-known-good file
 #   --no-probe                     skip the liveness probe (shape-check only)
@@ -19,7 +19,7 @@ PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 
 AGENTS_DIR="${CC_AGENTS_AGENTS_DIR:-"$PLUGIN_ROOT/agents"}"
 LASTGOOD="${CC_AGENTS_LASTGOOD:-"$PLUGIN_ROOT/.claude/cc-agents.lastgood"}"
-REVIEWERS=(glm-review-spec glm-review-plan glm-review-code glm-review-implementation)
+REVIEWERS=(glm-review-code glm-review-design)
 CRAWLER=(glm-code-crawler)
 
 probe=1

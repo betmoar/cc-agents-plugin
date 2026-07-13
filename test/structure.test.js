@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 describe("plugin manifest", () => {
   it("is valid JSON with required fields", () => {
@@ -13,10 +13,7 @@ describe("plugin manifest", () => {
 });
 
 describe("agents", () => {
-  const reviewers = [
-    "glm-review-spec", "glm-review-plan",
-    "glm-review-code", "glm-review-implementation",
-  ];
+  const reviewers = ["glm-review-code", "glm-review-design"];
   it("all agent files have a name/description/model frontmatter", () => {
     for (const f of readdirSync("agents").filter((n) => n.endsWith(".md"))) {
       const src = readFileSync(`agents/${f}`, "utf8");
@@ -26,13 +23,13 @@ describe("agents", () => {
       assert.match(src, /\nmodel:\s*\S+/, `${f} missing model`);
     }
   });
-  it("the four reviewers default to glm-5.2[1m]", () => {
+  it("the two reviewers default to glm-5.2[1m]", () => {
     for (const r of reviewers) {
       const src = readFileSync(`agents/${r}.md`, "utf8");
       assert.match(src, /\nmodel:\s*glm-5\.2\[1m\]/, `${r} wrong default model`);
     }
   });
-  it("the four reviewers carry no Bash (read-only least privilege)", () => {
+  it("the two reviewers carry no Bash (read-only least privilege)", () => {
     for (const r of reviewers) {
       const src = readFileSync(`agents/${r}.md`, "utf8");
       const tools = (src.match(/\ntools:\s*(.+)/) || [])[1] || "";
@@ -124,46 +121,6 @@ describe("code-crawl skill", () => {
   });
 });
 
-describe("reviewer shared invariants (drift locks)", () => {
-  const reviewers = [
-    "glm-review-spec", "glm-review-plan",
-    "glm-review-code", "glm-review-implementation",
-  ];
-  const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
-  // Fails with a readable assertion instead of throwing if a `tools:` line is
-  // missing or the regex drifts (the old `(…||[])[1].trim()` threw TypeError).
-  const toolsLine = (r) => {
-    const m = src(r).match(/\ntools:\s*(.+)/);
-    assert.ok(m, `${r}: no \`tools:\` line found`);
-    return m[1].trim();
-  };
-
-  it("all four share one identical read-only tools line", () => {
-    const lines = reviewers.map(toolsLine);
-    const uniq = [...new Set(lines)];
-    assert.equal(uniq.length, 1, `tools lines diverge: ${uniq.join(" | ")}`);
-    assert.equal(uniq[0], "Read, Grep, Glob");
-  });
-
-  it("all four frame themselves as the CHEAP, WIDE pass", () => {
-    for (const r of reviewers) {
-      assert.match(src(r), /CHEAP, WIDE pass/i, `${r} missing cheap-wide framing`);
-    }
-  });
-
-  it("all four close with the GLM first-pass confirm note", () => {
-    for (const r of reviewers) {
-      assert.match(src(r), /GLM first-pass — confirm before acting/, `${r} missing confirm note`);
-    }
-  });
-
-  it("all four require a confidence rating", () => {
-    for (const r of reviewers) {
-      assert.match(src(r), /confidence/i, `${r} missing confidence rule`);
-    }
-  });
-});
-
 describe("reviewer locked schema (drift locks)", () => {
   const reviewers = ["glm-review-design", "glm-review-code"];
   const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
@@ -201,6 +158,14 @@ describe("reviewer locked schema (drift locks)", () => {
       assert.match(src(r), /CHEAP, WIDE pass/, `${r} missing cheap-wide framing`);
       assert.match(src(r), /GLM first-pass — confirm before acting/, `${r} missing confirm note`);
       assert.match(src(r), /confidence/i, `${r} missing confidence rule`);
+    }
+  });
+});
+
+describe("removed agents stay gone (negative existence)", () => {
+  it("the three deleted reviewers do not exist", () => {
+    for (const f of ["glm-review-implementation", "glm-review-plan", "glm-review-spec"]) {
+      assert.ok(!existsSync(`agents/${f}.md`), `agents/${f}.md should not exist`);
     }
   });
 });
