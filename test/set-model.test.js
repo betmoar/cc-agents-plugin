@@ -92,6 +92,16 @@ describe("set-model.sh", () => {
   });
 });
 
+describe("set-model.sh --implementer", () => {
+  it("targets only the implementer", () => {
+    run(["--implementer", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    assert.equal(modelOf("glm-implementer"), "glm-4.6");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+  });
+});
+
 // Production-path regression: no CC_AGENTS_AGENTS_DIR — BASH_SOURCE resolution must work.
 // Sets up a fake plugin root with agent fixtures, invokes the script BY PATH from a
 // foreign cwd (/tmp), and asserts the fixture files are rewritten.

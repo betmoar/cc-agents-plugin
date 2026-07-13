@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Transactionally rewrite the `model:` frontmatter line in cc-agents agents.
 #
-#   set-model.sh <id>              rewrite the 2 reviewers
-#   set-model.sh --crawler <id>    rewrite glm-code-crawler only
-#   set-model.sh --revert          restore from the last-known-good file
+#   set-model.sh <id>                 rewrite the 2 reviewers
+#   set-model.sh --crawler <id>       rewrite glm-code-crawler only
+#   set-model.sh --implementer <id>   rewrite glm-implementer only
+#   set-model.sh --revert             restore from the last-known-good file
 #   --no-probe                     skip the liveness probe (shape-check only)
 #
 # Guard order: shape check -> probe (unless --no-probe) -> save last-known-good
@@ -21,6 +22,7 @@ AGENTS_DIR="${CC_AGENTS_AGENTS_DIR:-"$PLUGIN_ROOT/agents"}"
 LASTGOOD="${CC_AGENTS_LASTGOOD:-"$PLUGIN_ROOT/.claude/cc-agents.lastgood"}"
 REVIEWERS=(glm-review-code glm-review-design)
 CRAWLER=(glm-code-crawler)
+IMPLEMENTER=(glm-implementer)
 
 probe=1
 target="reviewers"
@@ -30,6 +32,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --no-probe) probe=0 ;;
     --crawler)  target="crawler" ;;
+    --implementer) target="implementer" ;;
     --revert)   target="revert" ;;
     -*) echo "unknown flag: $1" >&2; exit 2 ;;
     *)  id="$1" ;;
@@ -52,6 +55,7 @@ files=()
 case "$target" in
   reviewers) for r in "${REVIEWERS[@]}"; do files+=("$AGENTS_DIR/$r.md"); done ;;
   crawler)   for c in "${CRAWLER[@]}";  do files+=("$AGENTS_DIR/$c.md"); done ;;
+  implementer) for x in "${IMPLEMENTER[@]}"; do files+=("$AGENTS_DIR/$x.md"); done ;;
   revert)
     [ -f "$LASTGOOD" ] || { echo "no last-known-good to revert to" >&2; exit 1; }
     # Collect (file, model) pairs from the lastgood record.
@@ -83,7 +87,7 @@ case "$target" in
     ;;
 esac
 
-[ -n "$id" ] || { echo "usage: set-model.sh [--crawler] [--no-probe] <model-id> | --revert" >&2; exit 2; }
+[ -n "$id" ] || { echo "usage: set-model.sh [--crawler|--implementer] [--no-probe] <model-id> | --revert" >&2; exit 2; }
 
 # 1. Shape check: glm- prefix OR an OpenRouter-namespaced id (contains a slash).
 if ! printf '%s' "$id" | grep -Eq '^glm-|/'; then
