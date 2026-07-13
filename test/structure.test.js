@@ -182,3 +182,27 @@ describe("glm-review-design axes (8 greps for 7 axes, by design)", () => {
     }
   });
 });
+
+describe("review-panel reviewer-selection map (drift locks)", () => {
+  const s = () => readFileSync("skills/review-panel/SKILL.md", "utf8");
+
+  it("names both doc globs", () => {
+    assert.match(s(), /\*-design\.md/);
+    assert.match(s(), /\*-plan\.md/);
+  });
+
+  it("routes spec and plan docs to glm-review-design", () => {
+    assert.match(s(), /spec.*glm-review-design/);
+    assert.match(s(), /plan.*glm-review-design/);
+  });
+
+  it("routes code and implementation checks to glm-review-code", () => {
+    assert.match(s(), /code.*glm-review-code/);
+    assert.match(s(), /implementation.*glm-review-code/);
+  });
+
+  it("run-report template uses a <reviewer> placeholder, not a hardcoded agent", () => {
+    assert.match(s(), /<reviewer>/);
+    assert.doesNotMatch(s(), /reviewer:\*\* glm-review-spec/);
+  });
+});

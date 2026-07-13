@@ -20,7 +20,9 @@ Convene a multi-lens GLM review panel over a spec or plan and synthesize one rep
 
 ## Procedure
 
-1. **Pick the reviewer.** A spec/`*-design.md` → `glm-review-spec`. A plan/`*-plan.md` → `glm-review-plan`. (For code or an implementation-vs-spec check, use `glm-review-code` / `glm-review-implementation` with the same lens structure.)
+1. **Pick the reviewer** (two-way map):
+   - a spec (`*-design.md`) or a plan (`*-plan.md`) → `glm-review-design`
+   - code, a diff, or an implementation-vs-spec check → `glm-review-code`
 
 2. **Preflight: is the proxy up?** Run:
 
@@ -57,7 +59,7 @@ Convene a multi-lens GLM review panel over a spec or plan and synthesize one rep
 
    ```
    # Panel run — <artifact-basename>  (<YYYY-MM-DD HH:MM>)
-   - **artifact:** <path>     **reviewer:** glm-review-spec     **N:** 3
+   - **artifact:** <path>     **reviewer:** <reviewer>     **N:** 3
    - **lenses:** A ambiguity · B contradictions/feasibility · C testability
    - **per-lens:** A → 4 findings · B → 2 · C → 3   (tokens: A ~Xk · B ~Yk · C ~Zk)
    - **buckets:** must-resolve 1 · should-clarify 3 · consider 2 · dropped <50: 4
