@@ -74,6 +74,10 @@ describe("model commands", () => {
     const src = readFileSync("commands/crawler-model.md", "utf8");
     assert.match(src, /set-model\.sh" --crawler/);
   });
+  it("implementer-model.md passes --implementer", () => {
+    const src = readFileSync("commands/implementer-model.md", "utf8");
+    assert.match(src, /set-model\.sh" --implementer/);
+  });
 });
 
 describe("review-panel skill", () => {
@@ -220,5 +224,19 @@ describe("glm-scout agent (drift locks)", () => {
 
   it("is discovery-tier: exact tools line with Bash, no Edit/Write", () => {
     assert.match(src(), /tools: Read, Grep, Glob, Bash$/m);
+  });
+});
+
+describe("glm-implementer agent (drift locks)", () => {
+  const src = () => readFileSync("agents/glm-implementer.md", "utf8");
+
+  it("is the only write-capable shape: exact tools line + model", () => {
+    assert.match(src(), /tools: Read, Grep, Glob, Bash, Edit, Write$/m);
+    assert.match(src(), /model: glm-5.2\[1m\]/);
+  });
+
+  it("carries the stop signal and the one-task scope delimiter", () => {
+    assert.match(src(), /STATUS:/);
+    assert.match(src(), /exactly one task/);
   });
 });
