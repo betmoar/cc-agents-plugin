@@ -165,8 +165,7 @@ describe("reviewer shared invariants (drift locks)", () => {
 });
 
 describe("reviewer locked schema (drift locks)", () => {
-  // Task 2 adds "glm-review-code" to this list.
-  const reviewers = ["glm-review-design"];
+  const reviewers = ["glm-review-design", "glm-review-code"];
   const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
 
   it("tools line is exactly `Read, Grep, Glob` (no Bash)", () => {
