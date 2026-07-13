@@ -240,3 +240,37 @@ describe("glm-implementer agent (drift locks)", () => {
     assert.match(src(), /exactly one task/);
   });
 });
+
+describe("README roster invariant (README.md only — CHANGELOG exempt)", () => {
+  const s = () => readFileSync("README.md", "utf8");
+  const CURRENT = [
+    "glm-brainstorm", "glm-scout", "glm-code-crawler",
+    "glm-implementer", "glm-review-code", "glm-review-design",
+  ];
+  const REMOVED = [
+    "glm-review-spec", "glm-review-plan",
+    "glm-review-implementation", "glm-bulk-reader",
+  ];
+
+  it("names all six current agents", () => {
+    for (const a of CURRENT) {
+      assert.ok(s().includes(a), `README missing ${a}`);
+    }
+  });
+
+  it("names none of the four removed/renamed agents", () => {
+    for (const a of REMOVED) {
+      assert.ok(!s().includes(a), `README still names ${a}`);
+    }
+  });
+
+  it("still documents the synthesis buckets (spec: README:84 unchanged but verified)", () => {
+    assert.ok(s().includes("must-resolve"), "README missing must-resolve bucket");
+    assert.ok(s().includes("should-clarify"), "README missing should-clarify bucket");
+    assert.ok(s().includes("consider"), "README missing consider bucket");
+  });
+
+  it("documents the implementer-model command", () => {
+    assert.ok(s().includes("/cc-agents:implementer-model"), "README missing implementer-model section");
+  });
+});

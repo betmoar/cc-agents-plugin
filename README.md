@@ -39,11 +39,11 @@ When the panel runs, it writes a per-run report at `docs/superpowers/specs/.revi
 
 ## Commands
 
-Both commands are transactional: they shape-check the model id, live-probe the proxy (unless `--no-probe`), save a last-known-good snapshot, and only then rewrite the agent files. Any failure before the write leaves every file untouched.
+All three commands are transactional: they shape-check the model id, live-probe the proxy (unless `--no-probe`), save a last-known-good snapshot, and only then rewrite the agent files. Any failure before the write leaves every file untouched.
 
 ### `/cc-agents:model <id>`
 
-Rewrite the `model:` frontmatter in the four reviewer agents (`glm-review-spec`, `glm-review-plan`, `glm-review-code`, `glm-review-implementation`).
+Rewrite the `model:` frontmatter in the two reviewer agents (`glm-review-code`, `glm-review-design`).
 
 **Default:** `glm-5.2[1m]`
 
@@ -65,7 +65,19 @@ Rewrite the `model:` frontmatter in the `glm-code-crawler` agent only.
 /cc-agents:crawler-model --revert
 ```
 
-**Flags (both commands):**
+### `/cc-agents:implementer-model <id>`
+
+Rewrite the `model:` frontmatter in the `glm-implementer` agent only.
+
+**Default:** `glm-5.2[1m]`
+
+```
+/cc-agents:implementer-model glm-5.2[1m]  # set to a specific model
+/cc-agents:implementer-model --no-probe glm-5.2[1m]
+/cc-agents:implementer-model --revert
+```
+
+**Flags (all three commands):**
 - `--no-probe` — skip the liveness probe; accept any shape-valid id without contacting the proxy.
 - `--revert` — restore the last-known-good model id from `.claude/cc-agents.lastgood`.
 
@@ -127,4 +139,4 @@ The `--revert` last-known-good snapshot (`cc-agents.lastgood`) is written to `.c
 
 ## Duplicate agents with cc-proxy (resolved in 0.3.0)
 
-cc-proxy versions **0.1.1 through 0.2.2** shipped their own `agents/` directory that duplicated six of these `glm-*` agents (the four reviewers plus `glm-brainstorm` and `glm-bulk-reader`; note `glm-code-crawler` was never duplicated). **cc-proxy 0.3.0 moved those agents into this plugin**, so on the current cc-proxy there is no duplication. If you pin an older cc-proxy and also run cc-agents, you will see those six agents registered twice — disable one copy (rename the agents in one plugin, or remove the `agents/` directory from the cc-proxy installation you are using) to avoid the duplicate registrations.
+cc-proxy versions **0.1.1 through 0.2.2** shipped their own `agents/` directory that duplicated six of these `glm-*` agents (the four pre-0.2.0 reviewers plus `glm-brainstorm` and the bulk-reader — renamed `glm-scout` in cc-agents 0.2.0; note `glm-code-crawler` was never duplicated). **cc-proxy 0.3.0 moved those agents into this plugin**, so on the current cc-proxy there is no duplication. If you pin an older cc-proxy and also run cc-agents, you will see those six agents registered twice — disable one copy (rename the agents in one plugin, or remove the `agents/` directory from the cc-proxy installation you are using) to avoid the duplicate registrations.
