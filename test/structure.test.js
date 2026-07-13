@@ -163,8 +163,8 @@ describe("reviewer locked schema (drift locks)", () => {
 });
 
 describe("removed agents stay gone (negative existence)", () => {
-  it("the three deleted reviewers do not exist", () => {
-    for (const f of ["glm-review-implementation", "glm-review-plan", "glm-review-spec"]) {
+  it("the three deleted reviewers and the renamed bulk-reader do not exist", () => {
+    for (const f of ["glm-review-implementation", "glm-review-plan", "glm-review-spec", "glm-bulk-reader"]) {
       assert.ok(!existsSync(`agents/${f}.md`), `agents/${f}.md should not exist`);
     }
   });
@@ -204,5 +204,21 @@ describe("review-panel reviewer-selection map (drift locks)", () => {
   it("run-report template uses a <reviewer> placeholder, not a hardcoded agent", () => {
     assert.match(s(), /<reviewer>/);
     assert.doesNotMatch(s(), /reviewer:\*\* glm-review-spec/);
+  });
+});
+
+describe("glm-scout agent (drift locks)", () => {
+  const src = () => readFileSync("agents/glm-scout.md", "utf8");
+
+  it("carries the discovery mandate literally", () => {
+    assert.match(src(), /discover with Grep\/Glob before reading/);
+  });
+
+  it("keeps the read-only shell restriction", () => {
+    assert.match(src(), /Read-only shell \(ls, grep, cat\) only/);
+  });
+
+  it("is discovery-tier: exact tools line with Bash, no Edit/Write", () => {
+    assert.match(src(), /tools: Read, Grep, Glob, Bash$/m);
   });
 });
