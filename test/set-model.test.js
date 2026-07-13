@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it, beforeEach, afterEach } from "node:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -99,6 +99,42 @@ describe("set-model.sh --implementer", () => {
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+  });
+});
+
+// spawnSync variant: captures stderr on success (execFileSync only exposes it on throw).
+function runRaw(args, env = {}) {
+  return spawnSync("bash", ["scripts/set-model.sh", ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CC_AGENTS_AGENTS_DIR: join(dir, "agents"),
+      CC_AGENTS_LASTGOOD: join(dir, "lastgood"),
+      ...env,
+    },
+  });
+}
+
+describe("set-model.sh --revert with a stale last-known-good", () => {
+  it("skips entries whose file no longer exists, warns on stderr, reverts the rest, exits 0", () => {
+    run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });   // lastgood now records both reviewers
+    rmSync(join(dir, "agents", "glm-review-design.md")); // simulate a pre-0.2.0 deleted agent
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
+    assert.match(res.stderr, /glm-review-design\.md no longer exists — skipped/);
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]"); // surviving file reverted
+  });
+
+  it("exits 0 with a note when every recorded file is gone", () => {
+    const lastgood = join(dir, "lastgood");
+    writeFileSync(
+      lastgood,
+      `reviewers\n${join(dir, "agents", "glm-review-spec.md")}\tglm-5.2[1m]\n`
+    );
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
+    assert.match(res.stderr, /glm-review-spec\.md no longer exists — skipped/);
+    assert.match(res.stdout, /nothing left to revert/);
   });
 });
 

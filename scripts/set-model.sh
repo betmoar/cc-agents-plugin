@@ -4,7 +4,7 @@
 #   set-model.sh <id>                 rewrite the 2 reviewers
 #   set-model.sh --crawler <id>       rewrite glm-code-crawler only
 #   set-model.sh --implementer <id>   rewrite glm-implementer only
-#   set-model.sh --revert             restore from the last-known-good file
+#   set-model.sh --revert             restore from the last-known-good file (skips + warns on files that no longer exist)
 #   --no-probe                     skip the liveness probe (shape-check only)
 #
 # Guard order: shape check -> probe (unless --no-probe) -> save last-known-good
@@ -61,11 +61,22 @@ case "$target" in
     # Collect (file, model) pairs from the lastgood record.
     rev_files=()
     rev_models=()
+    # Skip files deleted since the snapshot (e.g. a pre-0.2.0 lastgood naming
+    # removed reviewers): warn per file, keep going. Filtering here keeps
+    # rev_files/rev_models/rev_tmps aligned by construction.
     while IFS=$'\t' read -r f m; do
       [ -n "$f" ] || continue
+      if [ ! -f "$f" ]; then
+        echo "$(basename "$f") no longer exists — skipped" >&2
+        continue
+      fi
       rev_files+=("$f")
       rev_models+=("$m")
     done < <(tail -n +2 "$LASTGOOD")
+    if [ "${#rev_files[@]}" -eq 0 ]; then
+      echo "nothing left to revert — every recorded file is gone."
+      exit 0
+    fi
     # First pass: render every target into a temp file; abort cleanly on any failure.
     rev_tmps=()
     for i in "${!rev_files[@]}"; do
