@@ -274,3 +274,24 @@ describe("README roster invariant (README.md only — CHANGELOG exempt)", () => 
     assert.ok(s().includes("/cc-agents:implementer-model"), "README missing implementer-model section");
   });
 });
+
+describe("CHANGELOG 0.2.0 entry (append-only carve-out: old names allowed in history)", () => {
+  it("has a 0.2.0 entry naming all four removed/renamed agents", () => {
+    const s = readFileSync("CHANGELOG.md", "utf8");
+    const start = s.indexOf("## [0.2.0]");
+    assert.ok(start >= 0, "no 0.2.0 entry");
+    const rest = s.slice(start);
+    const end = rest.indexOf("\n## [", 1);
+    const entry = end === -1 ? rest : rest.slice(0, end);
+    for (const a of ["glm-review-spec", "glm-review-plan", "glm-review-implementation", "glm-bulk-reader"]) {
+      assert.ok(entry.includes(a), `0.2.0 entry missing ${a}`);
+    }
+  });
+
+  it("plugin.json and package.json agree on 0.2.0", () => {
+    const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8"));
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    assert.equal(plugin.version, "0.2.0");
+    assert.equal(pkg.version, "0.2.0");
+  });
+});

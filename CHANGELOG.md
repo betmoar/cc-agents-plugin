@@ -5,6 +5,26 @@ All notable changes to the **cc-agents** plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-07-13
+
+Agent consolidation: 8 → 6 agents, per `docs/superpowers/specs/cc-agents-agent-consolidation-design.md` (v5). Roster break — grep your prompts/skills for the four names below.
+
+### Removed
+- **`glm-review-spec`, `glm-review-plan`, `glm-review-implementation`** — the four reviewers collapsed into two, split by input domain: `glm-review-code` (code/diff; absorbs review-implementation's drift-vs-spec axes) and the new `glm-review-design` (spec or plan doc; all axes from review-spec and review-plan preserved).
+
+### Changed
+- **`glm-bulk-reader` renamed `glm-scout`** with a discovery mandate: it now discovers with Grep/Glob before reading, instead of only reading caller-supplied paths.
+- **`glm-review-code`** rewritten to the locked reviewer output schema (`must-resolve / should-clarify / consider / gaps / non-applicable-axes` headings, `[h/m/l]` confidence-prefixed finding lines) shared with `glm-review-design`.
+- **`set-model.sh --revert`** now skips last-known-good entries whose agent file no longer exists (one-line stderr warning each, non-fatal), so pre-0.2.0 snapshots naming deleted reviewers stay usable.
+- `review-panel` skill: reviewer-selection map is two-way (design docs → `glm-review-design`; code → `glm-review-code`); run-report template uses a `<reviewer>` placeholder.
+
+### Added
+- **`glm-review-design`** reviewer — specs and plans, 7 axes (ambiguity, completeness/gaps, contradictions, testability, sequencing, risk & blast radius, assumptions).
+- **`--implementer` retune group** in `set-model.sh` plus the `/cc-agents:implementer-model` command, wiring the existing `glm-implementer` agent (its own group, default `glm-5.2[1m]`).
+- Drift-lock tests: locked reviewer schema, design axes, scout discovery mandate, implementer contract, reviewer-selection map, `<reviewer>` template, README roster invariant, and negative-existence of the four removed/renamed files.
+
+[0.2.0]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.2...v0.2.0
+
 ## [0.1.2] — 2026-06-28
 
 ### Changed
