@@ -163,3 +163,58 @@ describe("reviewer shared invariants (drift locks)", () => {
     }
   });
 });
+
+describe("reviewer locked schema (drift locks)", () => {
+  // Task 2 adds "glm-review-code" to this list.
+  const reviewers = ["glm-review-design"];
+  const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
+
+  it("tools line is exactly `Read, Grep, Glob` (no Bash)", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /tools: Read, Grep, Glob$/m, `${r} tools line drifted`);
+    }
+  });
+
+  it("defaults to glm-5.2[1m]", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /\nmodel:\s*glm-5\.2\[1m\]/, `${r} wrong default model`);
+    }
+  });
+
+  it("body carries the five locked schema headings", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /## must-resolve/, `${r} missing must-resolve`);
+      assert.match(src(r), /## should-clarify/, `${r} missing should-clarify`);
+      assert.match(src(r), /## consider/, `${r} missing consider`);
+      assert.match(src(r), /## gaps/, `${r} missing gaps`);
+      assert.match(src(r), /## non-applicable-axes/, `${r} missing non-applicable-axes`);
+    }
+  });
+
+  it("finding lines carry the [h/m/l] confidence prefix", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /^- \[[hml]\] /m, `${r} missing confidence-prefixed finding line`);
+    }
+  });
+
+  it("frames as the CHEAP, WIDE pass and closes with the confirm note", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /CHEAP, WIDE pass/, `${r} missing cheap-wide framing`);
+      assert.match(src(r), /GLM first-pass — confirm before acting/, `${r} missing confirm note`);
+      assert.match(src(r), /confidence/i, `${r} missing confidence rule`);
+    }
+  });
+});
+
+describe("glm-review-design axes (8 greps for 7 axes, by design)", () => {
+  const src = () => readFileSync("agents/glm-review-design.md", "utf8");
+  const axes = [
+    /Ambiguity/, /Completeness/, /Gaps/, /Contradictions/,
+    /Testability/, /Sequencing/, /Risk & blast radius/, /Assumptions/,
+  ];
+  it("body names all seven axes (Completeness and Gaps asserted separately)", () => {
+    for (const rx of axes) {
+      assert.match(src(), rx, `glm-review-design missing axis ${rx}`);
+    }
+  });
+});
