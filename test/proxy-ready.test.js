@@ -31,11 +31,15 @@ describe("proxy-ready.sh", () => {
   let livePort;
 
   before(async () => {
-    // A real HTTP server standing in for the proxy — any HTTP response counts
-    // as "up", so a bare 200 is enough.
-    server = createServer((_req, res) => {
-      res.writeHead(200);
-      res.end("ok");
+    // Stand-in proxy: 200 only for GET /v1/models (the readiness route).
+    server = createServer((req, res) => {
+      if (req.url === "/v1/models") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ data: [{ id: "glm-5.2" }], _errors: [] }));
+      } else {
+        res.writeHead(404);
+        res.end("nope");
+      }
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     livePort = server.address().port;
@@ -43,13 +47,24 @@ describe("proxy-ready.sh", () => {
 
   after(() => server.close());
 
-  it("exits 0 when something is listening (proxy up)", async () => {
+  it("exits 0 when GET /v1/models returns 200 (proxy up)", async () => {
     assert.equal(await runProbe(livePort), 0);
   });
 
   it("exits 1 with no listener (proxy down)", async () => {
     // Port 1 is privileged and not listening in CI/dev → connection refused.
     assert.equal(await runProbe(1), 1);
+  });
+
+  it("exits 1 when /v1/models does not return 200 (proxy up but route unhealthy)", async () => {
+    const bad = createServer((_req, res) => { res.writeHead(500); res.end("x"); });
+    await new Promise((r) => bad.listen(0, "127.0.0.1", r));
+    const port = bad.address().port;
+    try {
+      assert.equal(await runProbe(port), 1);
+    } finally {
+      bad.close();
+    }
   });
 
   // FAIL-CLOSED drift-lock: with curl absent, `curl` exits 127 (command not
