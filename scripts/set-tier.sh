@@ -212,9 +212,21 @@ cmd_apply() {
   echo "applied $applied group(s), skipped $skipped (already at target)."
 }
 
+cmd_revert() {
+  if [ ! -f "$TIER_LASTGOOD" ]; then
+    echo "no tier snapshot at $TIER_LASTGOOD — nothing to revert (run 'set-tier.sh apply' first)." >&2
+    exit 1
+  fi
+  # Reuse set-model's hardened --revert against OUR snapshot: it restores every
+  # recorded file across all groups in one call (charset-validated, atomic,
+  # malformed-refusing). Point its lastgood at the tier snapshot for this call.
+  CC_AGENTS_LASTGOOD="$TIER_LASTGOOD" "${SET_MODEL_CMD[@]}" --revert
+}
+
 # --- dispatch -----------------------------------------------------------------
 sub="${1:-}"
 case "$sub" in
   apply)  cmd_apply ;;
+  revert) cmd_revert ;;
   *) echo "usage: set-tier.sh apply|revert|show" >&2; exit 2 ;;
 esac

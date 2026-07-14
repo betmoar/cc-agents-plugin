@@ -205,3 +205,39 @@ describe("set-tier.sh apply — validation (zero-write on error)", () => {
     assert.equal(modelOf("glm-scout"), "glm-5.2[1m]"); // untouched
   });
 });
+
+describe("set-tier.sh revert — multi-group, delegated to set-model --revert", () => {
+  it("restores every agent from the last apply (both reviewers AND scout)", () => {
+    // Real writer so the snapshot + revert exercise the true path. apply
+    // dispatches review then scout; each set-model call OVERWRITES sm.lastgood,
+    // so it ends holding ONLY scout — the exact reason tier revert must use its
+    // OWN cumulative snapshot instead of set-model's lastgood.
+    settings(`---\nreview: deep\nscout: fast\n---\n`);
+    const smLastgood = join(dir, "sm.lastgood");
+    let res = run(["apply"], { CC_AGENTS_LASTGOOD: smLastgood });
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(modelOf("glm-review-code"), "glm-4.7");
+    assert.equal(modelOf("glm-review-design"), "glm-4.7");
+    assert.equal(modelOf("glm-scout"), "glm-4.5-air");
+    // Proof of the overwrite hazard: set-model's own lastgood lost the reviewers.
+    const sm = readFileSync(smLastgood, "utf8");
+    assert.ok(sm.includes("glm-scout.md"), "sm.lastgood should hold the last group");
+    assert.ok(!sm.includes("glm-review-code.md"),
+      "set-model lastgood only keeps the LAST group — hence the separate tier snapshot");
+
+    // revert takes NO CC_AGENTS_LASTGOOD: cmd_revert points set-model at the
+    // TIER snapshot itself, which covers all groups.
+    res = run(["revert"]);
+    assert.equal(res.status, 0, res.stderr);
+    // The whole apply is undone — not just the last group.
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-scout"), "glm-5.2[1m]");
+  });
+
+  it("exits 1 when there is no tier snapshot", () => {
+    const res = run(["revert"]);
+    assert.equal(res.status, 1, res.stderr);
+    assert.match(res.stderr, /no tier snapshot/);
+  });
+});
