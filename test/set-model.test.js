@@ -11,6 +11,13 @@ const REPO_ROOT = resolve(__dirname, "..");
 
 const REVIEWERS = ["glm-review-code", "glm-review-design"];
 
+// A GET /v1/models body listing every id the suite writes, so the membership
+// probe passes. `_errors: []` = healthy. Drives set-model.sh via CC_AGENTS_MODELS_JSON.
+const MODELS_OK = JSON.stringify({
+  data: ["glm-4.6", "glm-5.2", "glm-5-turbo", "glm-4.5-air", "glm-4.7"].map((id) => ({ id })),
+  _errors: [],
+});
+
 let dir;
 function agent(name, model) {
   return `---\nname: ${name}\ntools: Read, Grep\nmodel: ${model}\n---\nbody\n`;
@@ -47,7 +54,7 @@ function modelOf(name) {
 
 describe("set-model.sh", () => {
   it("rewrites both reviewers on a good id (probe stubbed to pass)", () => {
-    run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     for (const r of REVIEWERS) {
       assert.equal(modelOf(r), "glm-4.6");
     }
@@ -57,7 +64,7 @@ describe("set-model.sh", () => {
   });
 
   it("rejects a bad-shape id without writing", () => {
-    assert.throws(() => run(["garbage"], { CC_AGENTS_PROBE_CMD: "true" }));
+    assert.throws(() => run(["garbage"], { CC_AGENTS_MODELS_JSON: MODELS_OK }));
     // Transactional guarantee: BOTH reviewer files must be untouched.
     for (const r of REVIEWERS) {
       assert.equal(modelOf(r), "glm-5.2[1m]");
@@ -65,23 +72,25 @@ describe("set-model.sh", () => {
     assert.equal(modelOf("glm-implementer"), "glm-5.2[1m]");
   });
 
-  it("aborts on probe failure without writing", () => {
-    assert.throws(() => run(["glm-nope"], { CC_AGENTS_PROBE_CMD: "false" }));
-    for (const r of REVIEWERS) {
-      assert.equal(modelOf(r), "glm-5.2[1m]");
-    }
+  it("aborts when the id is not listed by the proxy (probe failure)", () => {
+    // Assert the NEW membership stderr, not just the throw: without this the test
+    // could false-green off the OLD probe's curl-fails-in-CI abort at Step 2.
+    const res = runRaw(["glm-nope"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
+    assert.equal(res.status, 1, `expected exit 1, got ${res.status}: ${res.stderr}`);
+    assert.match(res.stderr, /not in proxy \/v1\/models/);
+    for (const r of REVIEWERS) assert.equal(modelOf(r), "glm-5.2[1m]");
     assert.equal(modelOf("glm-implementer"), "glm-5.2[1m]");
   });
 
   it("--revert restores the prior value", () => {
-    run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     run(["--revert"]);
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
   });
 
   it("--crawler targets only the crawler", () => {
-    run(["--crawler", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["--crawler", "glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     assert.equal(modelOf("glm-code-crawler"), "glm-4.6");
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
@@ -89,14 +98,44 @@ describe("set-model.sh", () => {
   });
 
   it("--no-probe skips the probe and still writes a good-shape id", () => {
-    run(["--no-probe", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "false" });
+    run(["--no-probe", "glm-4.6"], {});
     assert.equal(modelOf("glm-review-code"), "glm-4.6");
+  });
+});
+
+describe("set-model.sh GET /v1/models membership probe", () => {
+  it("passes a listed id", () => {
+    run(["glm-4.7"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
+    assert.equal(modelOf("glm-review-code"), "glm-4.7");
+  });
+
+  it("passes glm-5.2[1m] against a list containing plain glm-5.2 (bracket strip)", () => {
+    run(["glm-5.2[1m]"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  it("aborts exit 1 with the pinned message when the id is not listed", () => {
+    const res = runRaw(["glm-bogus"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
+    assert.equal(res.status, 1, `expected exit 1, got ${res.status}: ${res.stderr}`);
+    assert.match(res.stderr, /not in proxy \/v1\/models/);
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  it("aborts when data[] is missing (unexpected response)", () => {
+    const res = runRaw(["glm-4.6"], { CC_AGENTS_MODELS_JSON: "{}" });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /unexpected \/v1\/models response/);
+  });
+
+  it("--no-probe skips membership even for an unlisted id", () => {
+    run(["--no-probe", "glm-bogus"], { CC_AGENTS_MODELS_JSON: "{}" });
+    assert.equal(modelOf("glm-review-code"), "glm-bogus");
   });
 });
 
 describe("set-model.sh --implementer", () => {
   it("targets only the implementer", () => {
-    run(["--implementer", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["--implementer", "glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     assert.equal(modelOf("glm-implementer"), "glm-4.6");
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
@@ -106,7 +145,7 @@ describe("set-model.sh --implementer", () => {
 
 describe("set-model.sh --scout / --brainstorm (new tunable groups)", () => {
   it("--scout targets only the scout", () => {
-    run(["--scout", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["--scout", "glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     assert.equal(modelOf("glm-scout"), "glm-4.6");
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-brainstorm"), "glm-5.2[1m]");
@@ -114,7 +153,7 @@ describe("set-model.sh --scout / --brainstorm (new tunable groups)", () => {
   });
 
   it("--brainstorm targets only brainstorm", () => {
-    run(["--brainstorm", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["--brainstorm", "glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     assert.equal(modelOf("glm-brainstorm"), "glm-4.6");
     assert.equal(modelOf("glm-scout"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
@@ -123,7 +162,7 @@ describe("set-model.sh --scout / --brainstorm (new tunable groups)", () => {
 
 describe("set-model.sh --all (every tunable agent at once)", () => {
   it("rewrites all six agents", () => {
-    run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["--all", "glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     for (const a of [
       "glm-review-code", "glm-review-design", "glm-code-crawler",
       "glm-implementer", "glm-scout", "glm-brainstorm",
@@ -136,7 +175,7 @@ describe("set-model.sh --all (every tunable agent at once)", () => {
     // Strip the model: line from one agent so pre-validation fails.
     const scout = join(dir, "agents", "glm-scout.md");
     writeFileSync(scout, readFileSync(scout, "utf8").replace(/^model:.*\n/m, ""));
-    assert.throws(() => run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }));
+    assert.throws(() => run(["--all", "glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK }));
     // Every other agent must be untouched at its fixture default.
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
@@ -160,7 +199,7 @@ function runRaw(args, env = {}) {
 
 describe("set-model.sh --revert with a stale last-known-good", () => {
   it("skips entries whose file no longer exists, warns on stderr, reverts the rest, exits 0", () => {
-    run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });   // lastgood now records both reviewers
+    run(["glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });   // lastgood now records both reviewers
     rmSync(join(dir, "agents", "glm-review-design.md")); // simulate a pre-0.2.0 deleted agent
     const res = runRaw(["--revert"]);
     assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
@@ -221,7 +260,7 @@ describe("set-model.sh --revert with a stale last-known-good", () => {
     const code = join(dir, "agents", "glm-review-code.md");
     writeFileSync(code, readFileSync(code, "utf8").replace(/^model:.*\n/m, ""));
 
-    assert.throws(() => run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }));
+    assert.throws(() => run(["glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK }));
     // Previous lastgood intact, byte for byte…
     assert.equal(readFileSync(lastgood, "utf8"), `reviewers\n${design}\tglm-OLD\n`);
     // …and --revert still works off it.
@@ -292,7 +331,7 @@ describe("set-model.sh --revert refuses a malformed (non-empty) lastgood", () =>
   });
 
   it("discloses the skipped count in the success message on a partial revert", () => {
-    run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }); // records both reviewers at glm-4.6
+    run(["glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK }); // records both reviewers at glm-4.6
     rmSync(join(dir, "agents", "glm-review-design.md")); // one deleted, one survives
     const res = runRaw(["--revert"]);
     assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
@@ -358,7 +397,7 @@ describe("set-model.sh --all round-trip (distinct per-file models)", () => {
                      "glm-implementer", "glm-scout", "glm-brainstorm"]) {
       before[a] = modelOf(a);
     }
-    run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    run(["--all", "glm-4.6"], { CC_AGENTS_MODELS_JSON: MODELS_OK });
     for (const a of Object.keys(before)) assert.equal(modelOf(a), "glm-4.6", `${a} not set by --all`);
     run(["--revert"]);
     for (const a of Object.keys(before)) {
@@ -405,7 +444,7 @@ describe("set-model.sh — production path (BASH_SOURCE resolution, no CC_AGENTS
         cwd: "/tmp",
         env: {
           ...process.env,
-          CC_AGENTS_PROBE_CMD: "true",
+          CC_AGENTS_MODELS_JSON: MODELS_OK,
           CC_AGENTS_AGENTS_DIR: "",
           CC_AGENTS_LASTGOOD: "",
         },

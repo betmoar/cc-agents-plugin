@@ -13,7 +13,7 @@
 # Guard order: shape check -> probe (unless --no-probe) -> save last-known-good
 # -> write. Any failure before the write leaves every file untouched.
 #
-# Test seams (env): CC_AGENTS_AGENTS_DIR, CC_AGENTS_LASTGOOD, CC_AGENTS_PROBE_CMD.
+# Test seams (env): CC_AGENTS_AGENTS_DIR, CC_AGENTS_LASTGOOD, CC_AGENTS_MODELS_JSON.
 set -euo pipefail
 
 # Derive the plugin root from this script's own location so paths work correctly
@@ -216,26 +216,48 @@ for f in "${files[@]}"; do
   fi
 done
 
-# 3. Liveness probe (unless skipped).
-#    CC_AGENTS_PROBE_CMD is a trusted test seam — eval'd as-is (stub, not user input).
-#    The production path passes $id as a literal curl argument, never through eval.
+# 3. Liveness + membership probe (unless skipped).
+#    Was a POST /v1/messages completion (cost money; a transient 429 on a VALID
+#    id aborted the write). Now a free GET /v1/models membership check: the id
+#    must be advertised by the proxy. Any trailing [...] context-variant marker
+#    is stripped first, so `glm-5.2[1m]` matches listed `glm-5.2`.
+#    CC_AGENTS_MODELS_JSON is a trusted test seam: when set, its value is used
+#    verbatim as the /v1/models body instead of curling. Production curls.
 if [ "$probe" -eq 1 ]; then
-  if [ -n "${CC_AGENTS_PROBE_CMD:-}" ]; then
-    # Test seam: trusted stub command, safe to eval.
-    if ! eval "$CC_AGENTS_PROBE_CMD"; then
-      echo "probe failed for '$id' — aborting, no files changed. (use --no-probe to skip)" >&2
-      exit 1
-    fi
+  base="${id%%\[*}"            # glm-5.2[1m] -> glm-5.2 ; glm-4.7 -> glm-4.7
+  if [ -n "${CC_AGENTS_MODELS_JSON:-}" ]; then
+    models_json="$CC_AGENTS_MODELS_JSON"
   else
     PORT="${PROXY_PORT:-4000}"
-    body="$(printf '{"model":"%s","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' "$id")"
-    if ! curl -fsS -m 10 -o /dev/null \
-        -X POST "http://127.0.0.1:${PORT}/v1/messages" \
-        -H 'content-type: application/json' \
-        -d "$body"; then
-      echo "probe failed for '$id' — aborting, no files changed. (use --no-probe to skip)" >&2
+    if ! command -v curl >/dev/null 2>&1; then
+      echo "probe cannot run: curl not found on PATH — use --no-probe." >&2
       exit 1
     fi
+    models_json="$(curl -sS -m 10 "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)"
+    rc=$?    # separate line: capturing $? on the assignment line is SC2181-noisy
+    if [ "$rc" -ne 0 ] || [ -z "$models_json" ]; then
+      echo "cc-proxy not reachable on 127.0.0.1:${PORT} — start cc-proxy first (or use --no-probe)." >&2
+      exit 1
+    fi
+  fi
+  # Shape sanity: a real /v1/models body has a `data` ARRAY (require the opening
+  # bracket, so a stray "data" substring in some other field can't pass).
+  if ! printf '%s' "$models_json" | grep -qE '"data"[[:space:]]*:[[:space:]]*\['; then
+    echo "unexpected /v1/models response (no data[]) — is this cc-proxy? (or use --no-probe)" >&2
+    exit 1
+  fi
+  # Extract advertised ids: match "id":"..." entries (flat model list, bash-3.2,
+  # no jq). Then exact-line membership against the [..]-stripped id.
+  listed="$(printf '%s' "$models_json" \
+    | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' \
+    | sed -E 's/^"id"[[:space:]]*:[[:space:]]*"([^"]+)"$/\1/')"
+  if ! printf '%s\n' "$listed" | grep -qxF -- "$base"; then
+    if printf '%s' "$models_json" | grep -qE '"_errors"[[:space:]]*:[[:space:]]*\[[^]]'; then
+      echo "'$id' not listed and /v1/models reports backend errors — check cc-proxy. (use --no-probe to skip)" >&2
+    else
+      echo "'$id' not in proxy /v1/models; use --no-probe if you know it routes." >&2
+    fi
+    exit 1
   fi
 fi
 
