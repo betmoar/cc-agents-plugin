@@ -1,5 +1,5 @@
 ---
-description: Set the GLM model for the four review-panel reviewer agents (transactional — shape check, live probe, last-known-good revert).
+description: Set the GLM model for the two review-panel reviewer agents (transactional — shape check, live probe, last-known-good revert).
 argument-hint: "<glm-model-id> | --no-probe <id> | --revert"
 allowed-tools: Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/set-model.sh":*)
 ---

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 describe("plugin manifest", () => {
   it("is valid JSON with required fields", () => {
@@ -37,10 +37,7 @@ describe("marketplace manifest", () => {
 });
 
 describe("agents", () => {
-  const reviewers = [
-    "glm-review-spec", "glm-review-plan",
-    "glm-review-code", "glm-review-implementation",
-  ];
+  const reviewers = ["glm-review-code", "glm-review-design"];
   it("all agent files have a name/description/model frontmatter", () => {
     for (const f of readdirSync("agents").filter((n) => n.endsWith(".md"))) {
       const src = readFileSync(`agents/${f}`, "utf8");
@@ -50,13 +47,13 @@ describe("agents", () => {
       assert.match(src, /\nmodel:\s*\S+/, `${f} missing model`);
     }
   });
-  it("the four reviewers default to glm-5.2[1m]", () => {
+  it("the two reviewers default to glm-5.2[1m]", () => {
     for (const r of reviewers) {
       const src = readFileSync(`agents/${r}.md`, "utf8");
       assert.match(src, /\nmodel:\s*glm-5\.2\[1m\]/, `${r} wrong default model`);
     }
   });
-  it("the four reviewers carry no Bash (read-only least privilege)", () => {
+  it("the two reviewers carry no Bash (read-only least privilege)", () => {
     for (const r of reviewers) {
       const src = readFileSync(`agents/${r}.md`, "utf8");
       const tools = (src.match(/\ntools:\s*(.+)/) || [])[1] || "";
@@ -100,6 +97,10 @@ describe("model commands", () => {
   it("crawler-model.md passes --crawler", () => {
     const src = readFileSync("commands/crawler-model.md", "utf8");
     assert.match(src, /set-model\.sh" --crawler/);
+  });
+  it("implementer-model.md passes --implementer", () => {
+    const src = readFileSync("commands/implementer-model.md", "utf8");
+    assert.match(src, /set-model\.sh" --implementer/);
   });
 });
 
@@ -172,42 +173,173 @@ describe("marker-path coupling (hook ↔ skill ↔ README)", () => {
   });
 });
 
-describe("reviewer shared invariants (drift locks)", () => {
-  const reviewers = [
-    "glm-review-spec", "glm-review-plan",
-    "glm-review-code", "glm-review-implementation",
-  ];
+describe("reviewer locked schema (drift locks)", () => {
+  const reviewers = ["glm-review-design", "glm-review-code"];
   const src = (r) => readFileSync(`agents/${r}.md`, "utf8");
-  // Fails with a readable assertion instead of throwing if a `tools:` line is
-  // missing or the regex drifts (the old `(…||[])[1].trim()` threw TypeError).
-  const toolsLine = (r) => {
-    const m = src(r).match(/\ntools:\s*(.+)/);
-    assert.ok(m, `${r}: no \`tools:\` line found`);
-    return m[1].trim();
-  };
 
-  it("all four share one identical read-only tools line", () => {
-    const lines = reviewers.map(toolsLine);
-    const uniq = [...new Set(lines)];
-    assert.equal(uniq.length, 1, `tools lines diverge: ${uniq.join(" | ")}`);
-    assert.equal(uniq[0], "Read, Grep, Glob");
-  });
-
-  it("all four frame themselves as the CHEAP, WIDE pass", () => {
+  it("tools line is exactly `Read, Grep, Glob` (no Bash)", () => {
     for (const r of reviewers) {
-      assert.match(src(r), /CHEAP, WIDE pass/i, `${r} missing cheap-wide framing`);
+      assert.match(src(r), /tools: Read, Grep, Glob$/m, `${r} tools line drifted`);
     }
   });
 
-  it("all four close with the GLM first-pass confirm note", () => {
+  it("defaults to glm-5.2[1m]", () => {
     for (const r of reviewers) {
+      assert.match(src(r), /\nmodel:\s*glm-5\.2\[1m\]/, `${r} wrong default model`);
+    }
+  });
+
+  it("body carries the five locked schema headings", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /## must-resolve/, `${r} missing must-resolve`);
+      assert.match(src(r), /## should-clarify/, `${r} missing should-clarify`);
+      assert.match(src(r), /## consider/, `${r} missing consider`);
+      assert.match(src(r), /## gaps/, `${r} missing gaps`);
+      assert.match(src(r), /## non-applicable-axes/, `${r} missing non-applicable-axes`);
+    }
+  });
+
+  it("finding lines carry the [h/m/l] confidence prefix", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /^- \[[hml]\] /m, `${r} missing confidence-prefixed finding line`);
+    }
+  });
+
+  it("frames as the CHEAP, WIDE pass and closes with the confirm note", () => {
+    for (const r of reviewers) {
+      assert.match(src(r), /CHEAP, WIDE pass/, `${r} missing cheap-wide framing`);
       assert.match(src(r), /GLM first-pass — confirm before acting/, `${r} missing confirm note`);
-    }
-  });
-
-  it("all four require a confidence rating", () => {
-    for (const r of reviewers) {
       assert.match(src(r), /confidence/i, `${r} missing confidence rule`);
     }
+  });
+});
+
+describe("removed agents stay gone (negative existence)", () => {
+  it("the three deleted reviewers and the renamed bulk-reader do not exist", () => {
+    for (const f of ["glm-review-implementation", "glm-review-plan", "glm-review-spec", "glm-bulk-reader"]) {
+      assert.ok(!existsSync(`agents/${f}.md`), `agents/${f}.md should not exist`);
+    }
+  });
+});
+
+describe("glm-review-design axes (8 greps for 7 axes, by design)", () => {
+  const src = () => readFileSync("agents/glm-review-design.md", "utf8");
+  const axes = [
+    /Ambiguity/, /Completeness/, /Gaps/, /Contradictions/,
+    /Testability/, /Sequencing/, /Risk & blast radius/, /Assumptions/,
+  ];
+  it("body names all seven axes (Completeness and Gaps asserted separately)", () => {
+    for (const rx of axes) {
+      assert.match(src(), rx, `glm-review-design missing axis ${rx}`);
+    }
+  });
+});
+
+describe("review-panel reviewer-selection map (drift locks)", () => {
+  const s = () => readFileSync("skills/review-panel/SKILL.md", "utf8");
+
+  it("names both doc globs", () => {
+    assert.match(s(), /\*-design\.md/);
+    assert.match(s(), /\*-plan\.md/);
+  });
+
+  it("routes spec and plan docs to glm-review-design", () => {
+    assert.match(s(), /spec.*glm-review-design/);
+    assert.match(s(), /plan.*glm-review-design/);
+  });
+
+  it("routes code and implementation checks to glm-review-code", () => {
+    assert.match(s(), /code.*glm-review-code/);
+    assert.match(s(), /implementation.*glm-review-code/);
+  });
+
+  it("run-report template uses a <reviewer> placeholder, not a hardcoded agent", () => {
+    assert.match(s(), /<reviewer>/);
+    assert.doesNotMatch(s(), /reviewer:\*\* glm-review-spec/);
+  });
+});
+
+describe("glm-scout agent (drift locks)", () => {
+  const src = () => readFileSync("agents/glm-scout.md", "utf8");
+
+  it("carries the discovery mandate literally", () => {
+    assert.match(src(), /discover with Grep\/Glob before reading/);
+  });
+
+  it("keeps the read-only shell restriction", () => {
+    assert.match(src(), /Read-only shell \(ls, grep, cat\) only/);
+  });
+
+  it("is discovery-tier: exact tools line with Bash, no Edit/Write", () => {
+    assert.match(src(), /tools: Read, Grep, Glob, Bash$/m);
+  });
+});
+
+describe("glm-implementer agent (drift locks)", () => {
+  const src = () => readFileSync("agents/glm-implementer.md", "utf8");
+
+  it("is the only write-capable shape: exact tools line + model", () => {
+    assert.match(src(), /tools: Read, Grep, Glob, Bash, Edit, Write$/m);
+    assert.match(src(), /model: glm-5.2\[1m\]/);
+  });
+
+  it("carries the stop signal and the one-task scope delimiter", () => {
+    assert.match(src(), /STATUS:/);
+    assert.match(src(), /exactly one task/);
+  });
+});
+
+describe("README roster invariant (README.md only — CHANGELOG exempt)", () => {
+  const s = () => readFileSync("README.md", "utf8");
+  const CURRENT = [
+    "glm-brainstorm", "glm-scout", "glm-code-crawler",
+    "glm-implementer", "glm-review-code", "glm-review-design",
+  ];
+  const REMOVED = [
+    "glm-review-spec", "glm-review-plan",
+    "glm-review-implementation", "glm-bulk-reader",
+  ];
+
+  it("names all six current agents", () => {
+    for (const a of CURRENT) {
+      assert.ok(s().includes(a), `README missing ${a}`);
+    }
+  });
+
+  it("names none of the four removed/renamed agents", () => {
+    for (const a of REMOVED) {
+      assert.ok(!s().includes(a), `README still names ${a}`);
+    }
+  });
+
+  it("still documents the synthesis buckets (spec: README:84 unchanged but verified)", () => {
+    assert.ok(s().includes("must-resolve"), "README missing must-resolve bucket");
+    assert.ok(s().includes("should-clarify"), "README missing should-clarify bucket");
+    assert.ok(s().includes("consider"), "README missing consider bucket");
+  });
+
+  it("documents the implementer-model command", () => {
+    assert.ok(s().includes("/cc-agents:implementer-model"), "README missing implementer-model section");
+  });
+});
+
+describe("CHANGELOG 0.2.1 entry (append-only carve-out: old names allowed in history)", () => {
+  it("has a 0.2.1 entry naming all four removed/renamed agents", () => {
+    const s = readFileSync("CHANGELOG.md", "utf8");
+    const start = s.indexOf("## [0.2.1]");
+    assert.ok(start >= 0, "no 0.2.1 entry");
+    const rest = s.slice(start);
+    const end = rest.indexOf("\n## [", 1);
+    const entry = end === -1 ? rest : rest.slice(0, end);
+    for (const a of ["glm-review-spec", "glm-review-plan", "glm-review-implementation", "glm-bulk-reader"]) {
+      assert.ok(entry.includes(a), `0.2.1 entry missing ${a}`);
+    }
+  });
+
+  it("plugin.json and package.json agree on 0.2.1", () => {
+    const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8"));
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    assert.equal(plugin.version, "0.2.1");
+    assert.equal(pkg.version, "0.2.1");
   });
 });

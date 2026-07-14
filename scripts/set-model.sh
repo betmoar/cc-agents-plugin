@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Transactionally rewrite the `model:` frontmatter line in cc-agents agents.
 #
-#   set-model.sh <id>              rewrite the 4 reviewers
-#   set-model.sh --crawler <id>    rewrite glm-code-crawler only
-#   set-model.sh --revert          restore from the last-known-good file
+#   set-model.sh <id>                 rewrite the 2 reviewers
+#   set-model.sh --crawler <id>       rewrite glm-code-crawler only
+#   set-model.sh --implementer <id>   rewrite glm-implementer only
+#   set-model.sh --revert             restore from the last-known-good file (skips + warns on files that no longer exist)
 #   --no-probe                     skip the liveness probe (shape-check only)
 #
 # Guard order: shape check -> probe (unless --no-probe) -> save last-known-good
@@ -19,8 +20,9 @@ PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 
 AGENTS_DIR="${CC_AGENTS_AGENTS_DIR:-"$PLUGIN_ROOT/agents"}"
 LASTGOOD="${CC_AGENTS_LASTGOOD:-"$PLUGIN_ROOT/.claude/cc-agents.lastgood"}"
-REVIEWERS=(glm-review-spec glm-review-plan glm-review-code glm-review-implementation)
+REVIEWERS=(glm-review-code glm-review-design)
 CRAWLER=(glm-code-crawler)
+IMPLEMENTER=(glm-implementer)
 
 probe=1
 target="reviewers"
@@ -30,6 +32,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --no-probe) probe=0 ;;
     --crawler)  target="crawler" ;;
+    --implementer) target="implementer" ;;
     --revert)   target="revert" ;;
     -*) echo "unknown flag: $1" >&2; exit 2 ;;
     *)  id="$1" ;;
@@ -52,25 +55,45 @@ files=()
 case "$target" in
   reviewers) for r in "${REVIEWERS[@]}"; do files+=("$AGENTS_DIR/$r.md"); done ;;
   crawler)   for c in "${CRAWLER[@]}";  do files+=("$AGENTS_DIR/$c.md"); done ;;
+  implementer) for x in "${IMPLEMENTER[@]}"; do files+=("$AGENTS_DIR/$x.md"); done ;;
   revert)
     [ -f "$LASTGOOD" ] || { echo "no last-known-good to revert to" >&2; exit 1; }
     # Collect (file, model) pairs from the lastgood record.
     rev_files=()
     rev_models=()
+    # Skip files deleted since the snapshot (e.g. a pre-0.2.0 lastgood naming
+    # removed reviewers): warn per file, keep going. Filtering here keeps
+    # rev_files/rev_models/rev_tmps aligned by construction. `seen` counts
+    # every well-formed record line so we can tell an EMPTY/corrupt snapshot
+    # (0 records → refuse) apart from one whose every named file was validly
+    # deleted (records existed, none survive → benign no-op).
+    seen=0
     while IFS=$'\t' read -r f m; do
       [ -n "$f" ] || continue
+      seen=$((seen + 1))
+      if [ ! -f "$f" ]; then
+        echo "$(basename "$f") no longer exists — skipped" >&2
+        continue
+      fi
       rev_files+=("$f")
       rev_models+=("$m")
     done < <(tail -n +2 "$LASTGOOD")
-    # An empty/truncated record means the snapshot was corrupted — refuse
-    # rather than "reverting" zero files and reporting success. Use an element
-    # COUNT, not `${rev_files[*]+x}`: the `+` set/unset test on an empty array
-    # is version-dependent (differs on bash 3.2, which this script targets), so
-    # it could read as "set" and skip the check. `${#arr[@]}` is unambiguous
-    # everywhere and safe under `set -u`.
-    if [ "${#rev_files[@]}" -eq 0 ]; then
-      echo "last-known-good record is empty or corrupt ($LASTGOOD) — nothing reverted." >&2
+    # `seen` counts well-formed record lines. Zero means the snapshot is
+    # empty or header-only (no records at all) — refuse rather than "reverting"
+    # zero files and reporting success. NOTE: this catches the empty/header-only
+    # shape only; a non-empty line whose first field isn't an existing path is
+    # bucketed as "deleted" below, not as corruption (see the exit-0 branch).
+    # Use element COUNTs, not `${arr[*]+x}`: the `+` set/unset test on an empty
+    # array is version-dependent (differs on bash 3.2, which this script
+    # targets), so it could read as "set" and skip the check. `${#arr[@]}` /
+    # integer counters are unambiguous everywhere and safe under `set -u`.
+    if [ "$seen" -eq 0 ]; then
+      echo "last-known-good record is empty or header-only ($LASTGOOD) — nothing reverted." >&2
       exit 1
+    fi
+    if [ "${#rev_files[@]}" -eq 0 ]; then
+      echo "nothing left to revert — every recorded file is gone."
+      exit 0
     fi
     # First pass: render every target into a temp file; abort cleanly on any failure.
     # (${arr[@]+...} guards: expanding an EMPTY array under `set -u` is fatal on
@@ -95,7 +118,7 @@ case "$target" in
     ;;
 esac
 
-[ -n "$id" ] || { echo "usage: set-model.sh [--crawler] [--no-probe] <model-id> | --revert" >&2; exit 2; }
+[ -n "$id" ] || { echo "usage: set-model.sh [--crawler|--implementer] [--no-probe] <model-id> | --revert" >&2; exit 2; }
 
 # 1. Shape check, two parts.
 #    a) Safe charset. This is a security check, not pedantry: the id is written
