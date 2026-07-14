@@ -223,10 +223,39 @@ cmd_revert() {
   CC_AGENTS_LASTGOOD="$TIER_LASTGOOD" "${SET_MODEL_CMD[@]}" --revert
 }
 
+cmd_show() {
+  local have_settings=1
+  [ -f "$SETTINGS_FILE" ] || have_settings=0
+  parse_settings   # populates SEL_GROUP/SEL_VALUE/EXPERIMENTAL (empty if no file)
+  [ "$have_settings" -eq 1 ] || echo "no settings file at $SETTINGS_FILE — showing current models only." >&2
+
+  local gi i f cur declared rid status
+  for gi in "${!TIER_GROUPS[@]}"; do
+    # Find a declared value for this group, if any.
+    declared="--"
+    if [ "${#SEL_GROUP[@]}" -gt 0 ]; then
+      for i in "${!SEL_GROUP[@]}"; do
+        [ "${SEL_GROUP[$i]}" = "${TIER_GROUPS[$gi]}" ] && declared="${SEL_VALUE[$i]}"
+      done
+    fi
+    for f in ${GROUP_FILES[$gi]}; do
+      cur="$(current_model "$f")"
+      if [ "$declared" = "--" ]; then
+        rid="--"; status="ok"
+      else
+        rid="$(resolve_tier "$declared" "$gi" "$EXPERIMENTAL" 2>/dev/null || echo "?")"
+        if [ "$rid" = "$cur" ]; then status="ok"; else status="DRIFT"; fi
+      fi
+      printf '%s\t%s\t%s\t%s\t%s\n' "$f" "$cur" "$declared" "$rid" "$status"
+    done
+  done
+}
+
 # --- dispatch -----------------------------------------------------------------
 sub="${1:-}"
 case "$sub" in
   apply)  cmd_apply ;;
   revert) cmd_revert ;;
+  show)   cmd_show ;;
   *) echo "usage: set-tier.sh apply|revert|show" >&2; exit 2 ;;
 esac

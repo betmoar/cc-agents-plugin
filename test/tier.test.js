@@ -241,3 +241,40 @@ describe("set-tier.sh revert — multi-group, delegated to set-model --revert", 
     assert.match(res.stderr, /no tier snapshot/);
   });
 });
+
+describe("set-tier.sh show — drift view", () => {
+  function rows(stdout) {
+    return Object.fromEntries(
+      stdout.trim().split("\n").filter(Boolean).map((l) => {
+        const c = l.split("\t");
+        return [c[0], c];
+      }),
+    );
+  }
+
+  it("marks DRIFT where current != resolved, ok/-- otherwise", () => {
+    settings(`---\nscout: deep\n---\n`); // scout factory glm-5.2[1m] vs deep glm-4.7 → DRIFT
+    const res = run(["show"]);
+    assert.equal(res.status, 0, res.stderr);
+    const r = rows(res.stdout);
+    assert.deepEqual(r["glm-scout"], ["glm-scout", "glm-5.2[1m]", "deep", "glm-4.7", "DRIFT"]);
+    // undeclared group → tier/resolved '--', status ok
+    assert.equal(r["glm-brainstorm"][2], "--");
+    assert.equal(r["glm-brainstorm"][4], "ok");
+  });
+
+  it("declared but already-at-target shows ok, not DRIFT", () => {
+    settings(`---\ncrawler: default\n---\n`); // crawler already glm-5-turbo
+    const r = run(["show"]).stdout;
+    const line = r.trim().split("\n").find((l) => l.startsWith("glm-code-crawler"));
+    assert.match(line, /\tok$/);
+  });
+
+  it("missing settings file → current-only columns, note on stderr, exit 0", () => {
+    const res = run(["show"]);
+    assert.equal(res.status, 0);
+    assert.match(res.stderr, /no settings file/);
+    const line = res.stdout.trim().split("\n").find((l) => l.startsWith("glm-scout"));
+    assert.match(line, /^glm-scout\tglm-5\.2\[1m\]\t--\t--\tok$/);
+  });
+});
