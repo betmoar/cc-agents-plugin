@@ -83,7 +83,12 @@ parse_settings() {
   # with zero fences, or only an opening `---` and no closing one, is rejected
   # per spec §4 ("no closing fence" = malformed). Count real fence lines.
   local fences
-  fences="$(grep -cE '^---[[:space:]]*$' "$SETTINGS_FILE")"
+  # `grep -c` exits 1 when the count is zero (no match) — under `set -e` that
+  # would abort the whole script right here instead of falling through to the
+  # `-lt 2` check below, turning a "malformed settings" (exit 2) into a raw
+  # `set -e` abort (exit 1). `|| true` keeps zero-fence files on the intended
+  # error path.
+  fences="$(grep -cE '^---[[:space:]]*$' "$SETTINGS_FILE" || true)"
   if [ "$fences" -lt 2 ]; then
     echo "malformed settings: need an opening and closing '---' fence in $SETTINGS_FILE" >&2
     exit 2
@@ -133,13 +138,16 @@ EOF
 cmd_apply() {
   parse_settings
   # Resolve + validate the WHOLE file before any write (atomicity).
-  local i gi rid exp="$EXPERIMENTAL"
+  local i gi rid exp="$EXPERIMENTAL" hint
   RES_GROUP=(); RES_ID=()
   if [ "${#SEL_GROUP[@]}" -gt 0 ]; then
     for i in "${!SEL_GROUP[@]}"; do
       gi="$(group_index "${SEL_GROUP[$i]}")"
       if ! rid="$(resolve_tier "${SEL_VALUE[$i]}" "$gi" "$exp")"; then
-        echo "unknown tier '${SEL_VALUE[$i]}' for group '${SEL_GROUP[$i]}' (valid: fast default deep max${exp:+, or a raw id})." >&2
+        # ${exp:+...} tests the STRING "0"/"1" (both non-empty) — not the
+        # boolean — so it always appended the hint. Test the value instead.
+        hint=""; [ "$exp" -eq 1 ] && hint=", or a raw id"
+        echo "unknown tier '${SEL_VALUE[$i]}' for group '${SEL_GROUP[$i]}' (valid: fast default deep max${hint})." >&2
         exit 1
       fi
       RES_GROUP+=("${SEL_GROUP[$i]}")

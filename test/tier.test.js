@@ -126,3 +126,82 @@ describe("set-tier.sh apply — resolution & dispatch (stubbed writer)", () => {
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]"); // untouched
   });
 });
+
+describe("set-tier.sh apply — validation (zero-write on error)", () => {
+  it("unknown tier → exit 1, nothing dispatched", () => {
+    settings(`---\nscout: turbo\n---\n`);
+    const res = run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.equal(res.status, 1, res.stderr);
+    assert.match(res.stderr, /unknown tier 'turbo'/);
+    assert.equal(argvLog().length, 0);
+  });
+
+  it("unknown group key → exit 2", () => {
+    settings(`---\nscoutt: fast\n---\n`);
+    const res = run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.equal(res.status, 2, res.stderr);
+    assert.match(res.stderr, /unknown group key 'scoutt'/);
+    assert.equal(argvLog().length, 0);
+  });
+
+  it("malformed frontmatter (no fence) → exit 2", () => {
+    settings(`scout: fast\n`); // no --- fences
+    const res = run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.equal(res.status, 2, res.stderr);
+    assert.match(res.stderr, /malformed settings/);
+  });
+
+  it("missing settings file → no-op exit 0", () => {
+    // no settings() call → file absent
+    const res = run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /applied 0 group\(s\)/);
+    assert.equal(argvLog().length, 0);
+  });
+
+  it("empty value is treated as unchanged (missing key)", () => {
+    settings(`---\nscout:\ncrawler: fast\n---\n`);
+    const res = run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(!argvLog().some((l) => l.startsWith("--scout")), "empty scout must be skipped");
+    assert.ok(argvLog().includes("--crawler glm-4.5-air"));
+  });
+
+  it("value normalization: quotes and inline comments are stripped", () => {
+    settings(`---\nscout: "fast"  # cheap tier\n---\n`);
+    run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.ok(argvLog().includes("--scout glm-4.5-air"), `normalization failed: ${argvLog()}`);
+  });
+
+  it("experimental gate OFF → raw OpenRouter id rejected (exit 1), nothing dispatched", () => {
+    settings(`---\nscout: deepseek/deepseek-v4-flash\nexperimental: false\n---\n`);
+    const res = run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.equal(res.status, 1, res.stderr);
+    assert.equal(argvLog().length, 0);
+  });
+
+  it("experimental gate ON → raw id accepted at the settings layer (argv dispatched)", () => {
+    settings(`---\nscout: deepseek/deepseek-v4-flash\nexperimental: true\n---\n`);
+    const res = run(["apply"], { CC_AGENTS_SET_MODEL_CMD: stubSetModel() });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(argvLog().includes("--scout deepseek/deepseek-v4-flash"));
+  });
+
+  // The stub above bypasses the membership probe, so it only proves the SETTINGS
+  // layer accepts the raw id. This pair drives the REAL set-model.sh to prove the
+  // "once accepted, still membership-checked" half of §6 — listed passes, an
+  // unlisted OpenRouter id aborts exit 1 even under experimental: true.
+  it("experimental id still membership-checked: listed → applied", () => {
+    settings(`---\nscout: deepseek/deepseek-v4-flash\nexperimental: true\n---\n`);
+    const res = run(["apply"], { CC_AGENTS_LASTGOOD: join(dir, "sm.lastgood") }); // real set-model, MODELS_OK lists it
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(modelOf("glm-scout"), "deepseek/deepseek-v4-flash");
+  });
+
+  it("experimental id still membership-checked: unlisted → exit 1, no write", () => {
+    settings(`---\nscout: deepseek/not-a-real-model\nexperimental: true\n---\n`);
+    const res = run(["apply"], { CC_AGENTS_LASTGOOD: join(dir, "sm.lastgood") });
+    assert.equal(res.status, 1, `expected membership abort, got ${res.status}: ${res.stderr}`);
+    assert.equal(modelOf("glm-scout"), "glm-5.2[1m]"); // untouched
+  });
+});
