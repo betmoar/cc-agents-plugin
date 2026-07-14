@@ -84,6 +84,60 @@ Pick the target group with a flag; with no flag it targets the two reviewers.
 
 > Listing the models a provider actually offers (a `get-model` companion) is pending cc-proxy exposing `/v1/models`.
 
+### `/cc-agents:tier [apply | revert | show]`
+
+Declarative task-class model tiering, driven by a per-project settings file at
+`.claude/cc-agents.local.md` (gitignored). Instead of picking a raw model id per
+group, declare a **tier** per group and let `set-tier.sh` resolve it to a real
+id and dispatch `set-model.sh` for each changed group. This is a **persistent
+switch, not a per-call override** — the harness can't reroute a single dispatch
+to a glm tier (the model param is a fixed sonnet/opus/haiku/fable enum); the
+tier holds until you change it again.
+
+| Tier | Resolves to |
+|------|-------------|
+| `fast` | `glm-4.5-air` |
+| `default` | per-group factory id (same defaults as `/cc-agents:model`) |
+| `deep` | `glm-4.7` |
+| `max` | `glm-5.2` |
+
+Settings file template (`.claude/cc-agents.local.md`):
+
+```markdown
+---
+review: deep
+crawler: fast
+implementer: default
+scout: max
+brainstorm: fast
+experimental: false
+---
+```
+
+Set `experimental: true` to allow raw OpenRouter ids (`deepseek/*`, `qwen/*`,
+etc.) in place of a tier name — they still go through `set-model.sh`'s shape
+check and the proxy's `/v1/models` membership probe, just like tier ids do.
+
+Subcommands:
+
+```
+/cc-agents:tier apply     # resolve the settings file, retune each changed group (atomic)
+/cc-agents:tier revert    # restore the whole last apply, all groups
+/cc-agents:tier show      # print current vs declared tier per agent (drift view)
+```
+
+`set-tier.sh` never writes agent frontmatter itself — it snapshots the current
+state to `.claude/cc-agents.tier.lastgood`, then calls `set-model.sh` once per
+changed group, so every write still goes through the shape-check → probe →
+last-known-good → atomic-write pipeline. `tier revert` restores every group
+from that snapshot in one call by delegating to `set-model.sh --revert`.
+
+Unlike `/cc-agents:model`'s `cc-agents.lastgood` (plugin-repo-relative), both
+`.claude/cc-agents.local.md` and `.claude/cc-agents.tier.lastgood` resolve
+relative to the **current working directory** — i.e. per consuming project.
+See [Consuming-project `.gitignore`](#consuming-project-gitignore) below for
+what to add to your project's `.gitignore`.
+
 ---
 
 ## Skills
@@ -128,9 +182,13 @@ These paths are per-project runtime state and should not be committed. Add them 
 
 ```gitignore
 **/.review-panel/
+.claude/*.local.md
+.claude/cc-agents.tier.lastgood
 ```
 
 `.review-panel/` directories hold panel-ran markers and should not be committed.
+
+`.claude/cc-agents.local.md` (the `/cc-agents:tier` settings file) and `.claude/cc-agents.tier.lastgood` (its multi-group revert snapshot) both resolve relative to the consuming project's working directory — unlike `/cc-agents:model`'s own snapshot below, they are not plugin-repo state.
 
 The `--revert` last-known-good snapshot (`cc-agents.lastgood`) is written to `.claude/cc-agents.lastgood` **inside the plugin repository itself** (resolved relative to the script's location, not the consuming project). If you are developing the plugin from source and want to keep it out of the plugin repo's git history, add the following to the plugin repo's `.gitignore`:
 
