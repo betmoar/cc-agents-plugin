@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Transactionally rewrite the `model:` frontmatter line in cc-agents agents.
 #
-#   set-model.sh <id>                 rewrite the 2 reviewers
+#   set-model.sh <id>                 rewrite the 2 reviewers (default group)
 #   set-model.sh --crawler <id>       rewrite glm-code-crawler only
 #   set-model.sh --implementer <id>   rewrite glm-implementer only
+#   set-model.sh --scout <id>         rewrite glm-scout only
+#   set-model.sh --brainstorm <id>    rewrite glm-brainstorm only
+#   set-model.sh --all <id>           rewrite every tunable agent at once
 #   set-model.sh --revert             restore from the last-known-good file (skips + warns on files that no longer exist)
 #   --no-probe                     skip the liveness probe (shape-check only)
 #
@@ -23,19 +26,39 @@ LASTGOOD="${CC_AGENTS_LASTGOOD:-"$PLUGIN_ROOT/.claude/cc-agents.lastgood"}"
 REVIEWERS=(glm-review-code glm-review-design)
 CRAWLER=(glm-code-crawler)
 IMPLEMENTER=(glm-implementer)
+SCOUT=(glm-scout)
+BRAINSTORM=(glm-brainstorm)
+# --all fans out over every tunable agent. DERIVED from the group arrays above
+# (not hand-listed) so adding a new group can't silently leave --all skipping it.
+# Splices with the ${arr[@]} idiom — bash 3.2 safe; these arrays are never empty.
+ALL=("${REVIEWERS[@]}" "${CRAWLER[@]}" "${IMPLEMENTER[@]}" "${SCOUT[@]}" "${BRAINSTORM[@]}")
 
 probe=1
 target="reviewers"
 id=""
+id_set=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-probe) probe=0 ;;
     --crawler)  target="crawler" ;;
     --implementer) target="implementer" ;;
+    --scout)    target="scout" ;;
+    --brainstorm) target="brainstorm" ;;
+    --all)      target="all" ;;
     --revert)   target="revert" ;;
     -*) echo "unknown flag: $1" >&2; exit 2 ;;
-    *)  id="$1" ;;
+    # A bareword that names a group is almost certainly a missing `--` (e.g.
+    # `set-model.sh scout glm-4.6`): without this it would be swallowed as the
+    # id, leaving target=reviewers, and SILENTLY retune the wrong agents.
+    reviewers|crawler|implementer|scout|brainstorm|all|revert)
+      echo "did you mean --$1? bare '$1' is not a model id." >&2; exit 2 ;;
+    # A second positional means ambiguous intent (which id wins?). Refuse rather
+    # than last-write-wins silently.
+    *)  if [ "$id_set" -eq 1 ]; then
+          echo "unexpected argument: '$1' (id already set to '$id')" >&2; exit 2
+        fi
+        id="$1"; id_set=1 ;;
   esac
   shift
 done
@@ -56,36 +79,65 @@ case "$target" in
   reviewers) for r in "${REVIEWERS[@]}"; do files+=("$AGENTS_DIR/$r.md"); done ;;
   crawler)   for c in "${CRAWLER[@]}";  do files+=("$AGENTS_DIR/$c.md"); done ;;
   implementer) for x in "${IMPLEMENTER[@]}"; do files+=("$AGENTS_DIR/$x.md"); done ;;
+  scout)     for s in "${SCOUT[@]}";    do files+=("$AGENTS_DIR/$s.md"); done ;;
+  brainstorm) for b in "${BRAINSTORM[@]}"; do files+=("$AGENTS_DIR/$b.md"); done ;;
+  all)       for a in "${ALL[@]}";      do files+=("$AGENTS_DIR/$a.md"); done ;;
   revert)
     [ -f "$LASTGOOD" ] || { echo "no last-known-good to revert to" >&2; exit 1; }
-    # Collect (file, model) pairs from the lastgood record.
+    # Parse the lastgood record into (file, model) pairs. Format is one header
+    # line (the target) followed by `<abspath>\t<model>` records, written by the
+    # save path below (printf '%s\t%s\n').
     rev_files=()
     rev_models=()
-    # Skip files deleted since the snapshot (e.g. a pre-0.2.0 lastgood naming
-    # removed reviewers): warn per file, keep going. Filtering here keeps
-    # rev_files/rev_models/rev_tmps aligned by construction. `seen` counts
-    # every well-formed record line so we can tell an EMPTY/corrupt snapshot
-    # (0 records → refuse) apart from one whose every named file was validly
-    # deleted (records existed, none survive → benign no-op).
+    # Three counters, three distinct outcomes:
+    #   seen      — well-formed records: `<abspath>\t<non-empty-model>`, no extra field
+    #   malformed — records that DON'T match that shape (no tab, empty model,
+    #               non-absolute path, stray 3rd column, or a model VALUE outside
+    #               the id charset — see below)
+    #   skipped   — well-formed records whose file was deleted since the snapshot
+    # Bucketing by SHAPE (not just "line non-empty") is the fix for issue #8: a
+    # corrupt-but-non-empty snapshot must be refused, not silently treated as
+    # "every file was deleted" and reported as a benign no-op.
+    #
+    # `|| [ -n "$f$m$extra" ]` keeps the final line even when it lacks a trailing
+    # newline: `read` returns non-zero at EOF but still populates the vars, so a
+    # writer/hand-edit without a closing \n no longer drops its last record.
     seen=0
-    while IFS=$'\t' read -r f m; do
-      [ -n "$f" ] || continue
+    malformed=0
+    skipped=0
+    while IFS=$'\t' read -r f m extra || [ -n "$f$m$extra" ]; do
+      [ -n "$f$m$extra" ] || continue          # blank line (e.g. trailing \n) — ignore
+      # Well-formed ⇔ exactly two fields, an absolute path, and a non-empty model.
+      case "$f" in /*) ;; *) malformed=$((malformed + 1)); continue ;; esac
+      if [ -n "$extra" ] || [ -z "$m" ]; then
+        malformed=$((malformed + 1)); continue
+      fi
+      # SECURITY: the recorded model is fed to the same `awk -v` as the forward
+      # path (fm_rewrite), which interprets backslash escapes — a `\n` in a
+      # corrupt/hand-edited lastgood injects an extra frontmatter line (e.g.
+      # `tools: Bash`), escalating a least-privilege agent. Re-apply the forward
+      # path's charset check here; a bad value poisons the whole snapshot.
+      case "$m" in *[!]A-Za-z0-9._:/[-]*) malformed=$((malformed + 1)); continue ;; esac
       seen=$((seen + 1))
       if [ ! -f "$f" ]; then
         echo "$(basename "$f") no longer exists — skipped" >&2
+        skipped=$((skipped + 1))
         continue
       fi
       rev_files+=("$f")
       rev_models+=("$m")
     done < <(tail -n +2 "$LASTGOOD")
-    # `seen` counts well-formed record lines. Zero means the snapshot is
-    # empty or header-only (no records at all) — refuse rather than "reverting"
-    # zero files and reporting success. NOTE: this catches the empty/header-only
-    # shape only; a non-empty line whose first field isn't an existing path is
-    # bucketed as "deleted" below, not as corruption (see the exit-0 branch).
-    # Use element COUNTs, not `${arr[*]+x}`: the `+` set/unset test on an empty
-    # array is version-dependent (differs on bash 3.2, which this script
-    # targets), so it could read as "set" and skip the check. `${#arr[@]}` /
+    # Any malformed record ⇒ the snapshot is corrupt/format-drifted. Refuse
+    # rather than reverting a partial, possibly-wrong subset.
+    if [ "$malformed" -gt 0 ]; then
+      echo "last-known-good record has $malformed unparseable line(s) ($LASTGOOD) — nothing reverted." >&2
+      exit 1
+    fi
+    # No well-formed records at all ⇒ empty or header-only snapshot. Refuse
+    # rather than "reverting" zero files and reporting success. Use integer
+    # counters / element COUNTs, not `${arr[*]+x}`: the `+` set/unset test on an
+    # empty array is version-dependent (differs on bash 3.2, which this script
+    # targets), so it could read as "set" and skip the check. `${#arr[@]}` and
     # integer counters are unambiguous everywhere and safe under `set -u`.
     if [ "$seen" -eq 0 ]; then
       echo "last-known-good record is empty or header-only ($LASTGOOD) — nothing reverted." >&2
@@ -113,12 +165,19 @@ case "$target" in
     for i in "${!rev_files[@]}"; do
       mv "${rev_tmps[$i]}" "${rev_files[$i]}"
     done
-    echo "reverted to last-known-good."
+    # Disclose partial reverts in the success line: when some recorded files were
+    # deleted, the count restored (< total recorded) is otherwise only visible by
+    # scrolling the per-file stderr warnings.
+    if [ "$skipped" -gt 0 ]; then
+      echo "reverted ${#rev_files[@]} of $seen recorded file(s) to last-known-good ($skipped skipped as deleted)."
+    else
+      echo "reverted to last-known-good."
+    fi
     exit 0
     ;;
 esac
 
-[ -n "$id" ] || { echo "usage: set-model.sh [--crawler|--implementer] [--no-probe] <model-id> | --revert" >&2; exit 2; }
+[ -n "$id" ] || { echo "usage: set-model.sh [--crawler|--implementer|--scout|--brainstorm|--all] [--no-probe] <model-id> | --revert" >&2; exit 2; }
 
 # 1. Shape check, two parts.
 #    a) Safe charset. This is a security check, not pedantry: the id is written

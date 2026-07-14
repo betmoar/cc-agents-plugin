@@ -35,6 +35,8 @@ beforeEach(() => {
   }
   writeFileSync(join(dir, "agents", "glm-code-crawler.md"), agent("glm-code-crawler", "glm-5-turbo"));
   writeFileSync(join(dir, "agents", "glm-implementer.md"), agent("glm-implementer", "glm-5.2[1m]"));
+  writeFileSync(join(dir, "agents", "glm-scout.md"), agent("glm-scout", "glm-5.2[1m]"));
+  writeFileSync(join(dir, "agents", "glm-brainstorm.md"), agent("glm-brainstorm", "glm-5.2[1m]"));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -99,6 +101,47 @@ describe("set-model.sh --implementer", () => {
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+  });
+});
+
+describe("set-model.sh --scout / --brainstorm (new tunable groups)", () => {
+  it("--scout targets only the scout", () => {
+    run(["--scout", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    assert.equal(modelOf("glm-scout"), "glm-4.6");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-brainstorm"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+  });
+
+  it("--brainstorm targets only brainstorm", () => {
+    run(["--brainstorm", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    assert.equal(modelOf("glm-brainstorm"), "glm-4.6");
+    assert.equal(modelOf("glm-scout"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+});
+
+describe("set-model.sh --all (every tunable agent at once)", () => {
+  it("rewrites all six agents", () => {
+    run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    for (const a of [
+      "glm-review-code", "glm-review-design", "glm-code-crawler",
+      "glm-implementer", "glm-scout", "glm-brainstorm",
+    ]) {
+      assert.equal(modelOf(a), "glm-4.6", `${a} not rewritten by --all`);
+    }
+  });
+
+  it("--all is transactional: one bad target aborts, nothing written", () => {
+    // Strip the model: line from one agent so pre-validation fails.
+    const scout = join(dir, "agents", "glm-scout.md");
+    writeFileSync(scout, readFileSync(scout, "utf8").replace(/^model:.*\n/m, ""));
+    assert.throws(() => run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }));
+    // Every other agent must be untouched at its fixture default.
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+    assert.equal(modelOf("glm-implementer"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-brainstorm"), "glm-5.2[1m]");
   });
 });
 
@@ -192,6 +235,137 @@ describe("set-model.sh --revert with a stale last-known-good", () => {
       () => run(["--revert"]),
       (e) => /empty or header-only/.test(String(e.stderr ?? e.message)),
     );
+  });
+});
+
+// Hardening (issue #8): a non-empty lastgood whose records are MALFORMED — not
+// just naming deleted files — must be refused, never bucketed as "all deleted"
+// and reported as a benign no-op. A malformed record is any post-header line
+// that is not exactly `<abspath>\t<non-empty-model>`.
+describe("set-model.sh --revert refuses a malformed (non-empty) lastgood", () => {
+  const lg = () => join(dir, "lastgood");
+
+  it("rejects a record line with no tab (garbage), does not report all-deleted", () => {
+    writeFileSync(lg(), "reviewers\nthis is a corrupted line with no tab\nmore garbage\n");
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.match(res.stderr, /unparseable|malformed/i);
+    assert.doesNotMatch(res.stdout, /nothing left to revert/);
+    assert.doesNotMatch(res.stdout, /reverted to last-known-good/);
+  });
+
+  it("rejects a column-shifted record (target\\tfile\\tmodel — extra field)", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    // Simulate a future 3-column format read by the 2-var reader: the real
+    // model ends up in a trailing field the current parser drops. Must refuse,
+    // not silently treat the shifted path token as a "deleted file".
+    writeFileSync(lg(), `reviewers\nreviewers\t${code}\tglm-OLD\n`);
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.match(res.stderr, /unparseable|malformed/i);
+    // The real agent file must be untouched.
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  it("rejects a surviving file with an empty model column (no `model: ` write)", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    writeFileSync(lg(), `reviewers\n${code}\t\n`); // path present, model empty
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.match(res.stderr, /unparseable|malformed|empty model/i);
+    // Frontmatter must NOT have been rewritten to a blank `model: ` line.
+    const src = readFileSync(code, "utf8");
+    assert.doesNotMatch(src, /^model:\s*$/m, "wrote a blank model: line");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  it("still reverts a well-formed record whose final line lacks a trailing newline", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    const design = join(dir, "agents", "glm-review-design.md");
+    // Two records; the last has NO trailing \n. The last record must still be
+    // reverted, not silently dropped by the read-loop condition.
+    writeFileSync(lg(), `reviewers\n${code}\tglm-A\n${design}\tglm-B`);
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
+    assert.equal(modelOf("glm-review-code"), "glm-A");
+    assert.equal(modelOf("glm-review-design"), "glm-B", "last (unterminated) record was dropped");
+  });
+
+  it("discloses the skipped count in the success message on a partial revert", () => {
+    run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }); // records both reviewers at glm-4.6
+    rmSync(join(dir, "agents", "glm-review-design.md")); // one deleted, one survives
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
+    // Success line names how many of M were reverted and how many skipped.
+    assert.match(res.stdout, /reverted 1 of 2 .*1 skipped/i);
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  // SECURITY: the forward path charset-rejects a model id because fm_rewrite's
+  // `awk -v` interprets backslash escapes — a literal `\n` becomes a real
+  // newline and injects an extra frontmatter line (e.g. tools: Bash), escalating
+  // a least-privilege agent. --revert feeds the RECORDED model straight into the
+  // same awk, so a corrupt/hand-edited lastgood must be charset-validated too.
+  it("rejects a recorded model value containing a literal backslash-n (revert injection)", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    writeFileSync(lg(), `reviewers\n${code}\tglm-x\\ntools: Bash\n`);
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.match(res.stderr, /unparseable|malformed/i);
+    // No injected frontmatter line, model unchanged.
+    assert.doesNotMatch(readFileSync(code, "utf8"), /^tools: Bash$/m, "injected a tools: line via revert");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  it("rejects a recorded model value containing a quote (revert probe/JSON smuggling parity)", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    writeFileSync(lg(), `reviewers\n${code}\tglm-"evil\n`);
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+});
+
+// Stray-positional guards: a bareword group name (missing --) or a second
+// positional id must ERROR, never silently mis-target or last-win.
+describe("set-model.sh rejects stray positional arguments", () => {
+  it("`scout glm-4.6` (missing --) errors instead of silently retuning reviewers", () => {
+    const res = runRaw(["scout", "glm-4.6", "--no-probe"]);
+    assert.notEqual(res.status, 0, "bareword group name was silently accepted");
+    // Reviewers must NOT have been retuned to glm-4.6.
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]", "reviewers silently mis-targeted");
+    assert.equal(modelOf("glm-scout"), "glm-5.2[1m]");
+  });
+
+  it("a second positional id errors (last-win is a silent footgun)", () => {
+    const res = runRaw(["glm-good", "glm-oops", "--no-probe"]);
+    assert.notEqual(res.status, 0, "second positional was silently accepted");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]", "wrote despite ambiguous args");
+  });
+
+  it("an unknown --flag exits 2 (bad-flag contract, distinct from bad-value exit 1)", () => {
+    const res = runRaw(["--bogus", "glm-4.6"]);
+    assert.equal(res.status, 2, `expected exit 2 for unknown flag, got ${res.status}`);
+    assert.match(res.stderr, /unknown flag/i);
+  });
+});
+
+describe("set-model.sh --all round-trip (distinct per-file models)", () => {
+  it("--all then --revert restores every agent to its OWN prior model", () => {
+    // Snapshot the distinct starting models: crawler is glm-5-turbo, rest glm-5.2[1m].
+    const before = {};
+    for (const a of ["glm-review-code", "glm-review-design", "glm-code-crawler",
+                     "glm-implementer", "glm-scout", "glm-brainstorm"]) {
+      before[a] = modelOf(a);
+    }
+    run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    for (const a of Object.keys(before)) assert.equal(modelOf(a), "glm-4.6", `${a} not set by --all`);
+    run(["--revert"]);
+    for (const a of Object.keys(before)) {
+      assert.equal(modelOf(a), before[a], `${a} not restored to its own prior model`);
+    }
+    // Specifically the cross-file case: crawler must be back to glm-5-turbo, not glm-5.2[1m].
+    assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
   });
 });
 

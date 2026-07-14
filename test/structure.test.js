@@ -87,20 +87,37 @@ describe("hooks.json", () => {
   });
 });
 
-describe("model commands", () => {
+describe("model command (consolidated, single switchable command)", () => {
   it("model.md wraps set-model.sh and allows only that bash call", () => {
     const src = readFileSync("commands/model.md", "utf8");
     assert.match(src, /set-model\.sh/);
     assert.match(src, /allowed-tools:/);
     assert.match(src, /\$\{CLAUDE_PLUGIN_ROOT\}/);
   });
-  it("crawler-model.md passes --crawler", () => {
-    const src = readFileSync("commands/crawler-model.md", "utf8");
-    assert.match(src, /set-model\.sh" --crawler/);
+  it("model.md passes $ARGUMENTS through so the type flag is user-selectable", () => {
+    const src = readFileSync("commands/model.md", "utf8");
+    assert.match(src, /set-model\.sh" \$ARGUMENTS/,
+      "model.md must forward args verbatim (no hardcoded group flag) so one command switches groups");
   });
-  it("implementer-model.md passes --implementer", () => {
-    const src = readFileSync("commands/implementer-model.md", "utf8");
-    assert.match(src, /set-model\.sh" --implementer/);
+  it("names every selectable group so the command is self-documenting", () => {
+    const src = readFileSync("commands/model.md", "utf8");
+    for (const flag of ["--crawler", "--implementer", "--scout", "--brainstorm", "--all"]) {
+      assert.match(src, new RegExp(flag.replace(/-/g, "\\-")), `model.md missing ${flag}`);
+    }
+  });
+  it("the old per-agent command files are gone (consolidated away)", () => {
+    for (const f of ["commands/crawler-model.md", "commands/implementer-model.md"]) {
+      assert.ok(!existsSync(f), `${f} should have been removed in the consolidation`);
+    }
+  });
+
+  it("--all is derived from the group arrays, not a hand-maintained literal", () => {
+    // Drift guard: a future group added to REVIEWERS/CRAWLER/... but forgotten in
+    // ALL would make --all silently skip that agent. Deriving ALL from the other
+    // arrays removes the drift; this test locks the derived form in.
+    const src = readFileSync("scripts/set-model.sh", "utf8");
+    assert.match(src, /ALL=\(\s*"\$\{REVIEWERS\[@\]\}"\s+"\$\{CRAWLER\[@\]\}"\s+"\$\{IMPLEMENTER\[@\]\}"\s+"\$\{SCOUT\[@\]\}"\s+"\$\{BRAINSTORM\[@\]\}"\s*\)/,
+      "ALL must be derived as the union of the group arrays");
   });
 });
 
@@ -318,8 +335,17 @@ describe("README roster invariant (README.md only — CHANGELOG exempt)", () => 
     assert.ok(s().includes("consider"), "README missing consider bucket");
   });
 
-  it("documents the implementer-model command", () => {
-    assert.ok(s().includes("/cc-agents:implementer-model"), "README missing implementer-model section");
+  it("documents the consolidated model command with its group flags", () => {
+    assert.ok(s().includes("/cc-agents:model"), "README missing /cc-agents:model section");
+    for (const flag of ["--implementer", "--crawler", "--scout", "--brainstorm", "--all"]) {
+      assert.ok(s().includes(flag), `README missing ${flag} in the model command docs`);
+    }
+  });
+
+  it("no longer documents the removed per-agent command names", () => {
+    for (const cmd of ["/cc-agents:crawler-model", "/cc-agents:implementer-model"]) {
+      assert.ok(!s().includes(cmd), `README still documents removed command ${cmd}`);
+    }
   });
 });
 
@@ -336,10 +362,16 @@ describe("CHANGELOG 0.2.1 entry (append-only carve-out: old names allowed in his
     }
   });
 
-  it("plugin.json and package.json agree on 0.2.1", () => {
+  it("plugin.json and package.json agree, and match the newest CHANGELOG heading", () => {
     const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8"));
     const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-    assert.equal(plugin.version, "0.2.1");
-    assert.equal(pkg.version, "0.2.1");
+    // Track the newest CHANGELOG heading instead of a hardcoded version, so this
+    // drift-lock stops going stale on every release (it needed a manual bump at
+    // 0.2.0→0.2.1). The release-gate re-checks the same coupling at tag time.
+    const changelog = readFileSync("CHANGELOG.md", "utf8");
+    const newest = (changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m) || [])[1];
+    assert.ok(newest, "no semver heading in CHANGELOG");
+    assert.equal(plugin.version, pkg.version, "plugin.json and package.json disagree");
+    assert.equal(plugin.version, newest, `plugin.json ${plugin.version} != newest CHANGELOG ${newest}`);
   });
 });

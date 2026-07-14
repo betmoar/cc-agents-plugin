@@ -52,47 +52,37 @@ The hook checks that marker path: if a run report already exists for the written
 
 ## Commands
 
-All three commands are transactional: they shape-check the model id, live-probe the proxy (unless `--no-probe`), save a last-known-good snapshot, and only then rewrite the agent files. Any failure before the write leaves every file untouched.
+### `/cc-agents:model [group] <id>`
 
-### `/cc-agents:model <id>`
+One transactional command retunes the `model:` frontmatter of any agent group: it shape-checks the model id, live-probes the proxy (unless `--no-probe`), saves a last-known-good snapshot, and only then rewrites the agent files. Any failure before the write leaves every file untouched.
 
-Rewrite the `model:` frontmatter in the two reviewer agents (`glm-review-code`, `glm-review-design`).
+Pick the target group with a flag; with no flag it targets the two reviewers.
 
-**Default:** `glm-5.2[1m]`
-
-```
-/cc-agents:model glm-5.2[1m]          # set to a specific model
-/cc-agents:model --no-probe glm-4     # skip the live probe (shape check only)
-/cc-agents:model --revert             # restore from last-known-good
-```
-
-### `/cc-agents:crawler-model <id>`
-
-Rewrite the `model:` frontmatter in the `glm-code-crawler` agent only.
-
-**Default:** `glm-5-turbo`
+| Flag | Agents | Default model |
+|------|--------|---------------|
+| *(none)* | `glm-review-code`, `glm-review-design` | `glm-5.2[1m]` |
+| `--crawler` | `glm-code-crawler` | `glm-5-turbo` |
+| `--implementer` | `glm-implementer` | `glm-5.2[1m]` |
+| `--scout` | `glm-scout` | `glm-5.2[1m]` |
+| `--brainstorm` | `glm-brainstorm` | `glm-5.2[1m]` |
+| `--all` | every agent above | — |
 
 ```
-/cc-agents:crawler-model glm-5-turbo  # set to a specific model
-/cc-agents:crawler-model --no-probe glm-5-turbo
-/cc-agents:crawler-model --revert
+/cc-agents:model glm-5.2[1m]              # reviewers (default group)
+/cc-agents:model --crawler glm-5-turbo    # one group
+/cc-agents:model --implementer glm-4.6
+/cc-agents:model --scout glm-4.6
+/cc-agents:model --brainstorm glm-4.6
+/cc-agents:model --all glm-4.6            # every tunable agent at once
+/cc-agents:model --no-probe glm-4         # skip the live probe (shape check only)
+/cc-agents:model --revert                 # restore from last-known-good
 ```
 
-### `/cc-agents:implementer-model <id>`
-
-Rewrite the `model:` frontmatter in the `glm-implementer` agent only.
-
-**Default:** `glm-5.2[1m]`
-
-```
-/cc-agents:implementer-model glm-5.2[1m]  # set to a specific model
-/cc-agents:implementer-model --no-probe glm-5.2[1m]
-/cc-agents:implementer-model --revert
-```
-
-**Flags (all three commands):**
+**Flags:**
 - `--no-probe` — skip the liveness probe; accept any shape-valid id without contacting the proxy.
-- `--revert` — restore the last-known-good model id from `.claude/cc-agents.lastgood`.
+- `--revert` — restore the last-known-good model ids from `.claude/cc-agents.lastgood` (skips + warns on any recorded file that no longer exists; refuses a malformed snapshot).
+
+> Listing the models a provider actually offers (a `get-model` companion) is pending cc-proxy exposing `/v1/models`.
 
 ---
 
