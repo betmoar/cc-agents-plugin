@@ -195,6 +195,70 @@ describe("set-model.sh --revert with a stale last-known-good", () => {
   });
 });
 
+// Hardening (issue #8): a non-empty lastgood whose records are MALFORMED — not
+// just naming deleted files — must be refused, never bucketed as "all deleted"
+// and reported as a benign no-op. A malformed record is any post-header line
+// that is not exactly `<abspath>\t<non-empty-model>`.
+describe("set-model.sh --revert refuses a malformed (non-empty) lastgood", () => {
+  const lg = () => join(dir, "lastgood");
+
+  it("rejects a record line with no tab (garbage), does not report all-deleted", () => {
+    writeFileSync(lg(), "reviewers\nthis is a corrupted line with no tab\nmore garbage\n");
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.match(res.stderr, /unparseable|malformed/i);
+    assert.doesNotMatch(res.stdout, /nothing left to revert/);
+    assert.doesNotMatch(res.stdout, /reverted to last-known-good/);
+  });
+
+  it("rejects a column-shifted record (target\\tfile\\tmodel — extra field)", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    // Simulate a future 3-column format read by the 2-var reader: the real
+    // model ends up in a trailing field the current parser drops. Must refuse,
+    // not silently treat the shifted path token as a "deleted file".
+    writeFileSync(lg(), `reviewers\nreviewers\t${code}\tglm-OLD\n`);
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.match(res.stderr, /unparseable|malformed/i);
+    // The real agent file must be untouched.
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  it("rejects a surviving file with an empty model column (no `model: ` write)", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    writeFileSync(lg(), `reviewers\n${code}\t\n`); // path present, model empty
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 1, `expected refusal, got exit ${res.status}: ${res.stdout}`);
+    assert.match(res.stderr, /unparseable|malformed|empty model/i);
+    // Frontmatter must NOT have been rewritten to a blank `model: ` line.
+    const src = readFileSync(code, "utf8");
+    assert.doesNotMatch(src, /^model:\s*$/m, "wrote a blank model: line");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+
+  it("still reverts a well-formed record whose final line lacks a trailing newline", () => {
+    const code = join(dir, "agents", "glm-review-code.md");
+    const design = join(dir, "agents", "glm-review-design.md");
+    // Two records; the last has NO trailing \n. The last record must still be
+    // reverted, not silently dropped by the read-loop condition.
+    writeFileSync(lg(), `reviewers\n${code}\tglm-A\n${design}\tglm-B`);
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
+    assert.equal(modelOf("glm-review-code"), "glm-A");
+    assert.equal(modelOf("glm-review-design"), "glm-B", "last (unterminated) record was dropped");
+  });
+
+  it("discloses the skipped count in the success message on a partial revert", () => {
+    run(["glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }); // records both reviewers at glm-4.6
+    rmSync(join(dir, "agents", "glm-review-design.md")); // one deleted, one survives
+    const res = runRaw(["--revert"]);
+    assert.equal(res.status, 0, `revert failed: ${res.stderr}`);
+    // Success line names how many of M were reverted and how many skipped.
+    assert.match(res.stdout, /reverted 1 of 2 .*1 skipped/i);
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+});
+
 // Production-path regression: no CC_AGENTS_AGENTS_DIR — BASH_SOURCE resolution must work.
 // Sets up a fake plugin root with agent fixtures, invokes the script BY PATH from a
 // foreign cwd (/tmp), and asserts the fixture files are rewritten.

@@ -58,34 +58,53 @@ case "$target" in
   implementer) for x in "${IMPLEMENTER[@]}"; do files+=("$AGENTS_DIR/$x.md"); done ;;
   revert)
     [ -f "$LASTGOOD" ] || { echo "no last-known-good to revert to" >&2; exit 1; }
-    # Collect (file, model) pairs from the lastgood record.
+    # Parse the lastgood record into (file, model) pairs. Format is one header
+    # line (the target) followed by `<abspath>\t<model>` records, written by the
+    # save path below (printf '%s\t%s\n').
     rev_files=()
     rev_models=()
-    # Skip files deleted since the snapshot (e.g. a pre-0.2.0 lastgood naming
-    # removed reviewers): warn per file, keep going. Filtering here keeps
-    # rev_files/rev_models/rev_tmps aligned by construction. `seen` counts
-    # every well-formed record line so we can tell an EMPTY/corrupt snapshot
-    # (0 records → refuse) apart from one whose every named file was validly
-    # deleted (records existed, none survive → benign no-op).
+    # Three counters, three distinct outcomes:
+    #   seen      — well-formed records: `<abspath>\t<non-empty-model>`, no extra field
+    #   malformed — records that DON'T match that shape (no tab, empty model,
+    #               non-absolute path, or a stray 3rd column from a format shift)
+    #   skipped   — well-formed records whose file was deleted since the snapshot
+    # Bucketing by SHAPE (not just "line non-empty") is the fix for issue #8: a
+    # corrupt-but-non-empty snapshot must be refused, not silently treated as
+    # "every file was deleted" and reported as a benign no-op.
+    #
+    # `|| [ -n "$f$m$extra" ]` keeps the final line even when it lacks a trailing
+    # newline: `read` returns non-zero at EOF but still populates the vars, so a
+    # writer/hand-edit without a closing \n no longer drops its last record.
     seen=0
-    while IFS=$'\t' read -r f m; do
-      [ -n "$f" ] || continue
+    malformed=0
+    skipped=0
+    while IFS=$'\t' read -r f m extra || [ -n "$f$m$extra" ]; do
+      [ -n "$f$m$extra" ] || continue          # blank line (e.g. trailing \n) — ignore
+      # Well-formed ⇔ exactly two fields, an absolute path, and a non-empty model.
+      case "$f" in /*) ;; *) malformed=$((malformed + 1)); continue ;; esac
+      if [ -n "$extra" ] || [ -z "$m" ]; then
+        malformed=$((malformed + 1)); continue
+      fi
       seen=$((seen + 1))
       if [ ! -f "$f" ]; then
         echo "$(basename "$f") no longer exists — skipped" >&2
+        skipped=$((skipped + 1))
         continue
       fi
       rev_files+=("$f")
       rev_models+=("$m")
     done < <(tail -n +2 "$LASTGOOD")
-    # `seen` counts well-formed record lines. Zero means the snapshot is
-    # empty or header-only (no records at all) — refuse rather than "reverting"
-    # zero files and reporting success. NOTE: this catches the empty/header-only
-    # shape only; a non-empty line whose first field isn't an existing path is
-    # bucketed as "deleted" below, not as corruption (see the exit-0 branch).
-    # Use element COUNTs, not `${arr[*]+x}`: the `+` set/unset test on an empty
-    # array is version-dependent (differs on bash 3.2, which this script
-    # targets), so it could read as "set" and skip the check. `${#arr[@]}` /
+    # Any malformed record ⇒ the snapshot is corrupt/format-drifted. Refuse
+    # rather than reverting a partial, possibly-wrong subset.
+    if [ "$malformed" -gt 0 ]; then
+      echo "last-known-good record has $malformed unparseable line(s) ($LASTGOOD) — nothing reverted." >&2
+      exit 1
+    fi
+    # No well-formed records at all ⇒ empty or header-only snapshot. Refuse
+    # rather than "reverting" zero files and reporting success. Use integer
+    # counters / element COUNTs, not `${arr[*]+x}`: the `+` set/unset test on an
+    # empty array is version-dependent (differs on bash 3.2, which this script
+    # targets), so it could read as "set" and skip the check. `${#arr[@]}` and
     # integer counters are unambiguous everywhere and safe under `set -u`.
     if [ "$seen" -eq 0 ]; then
       echo "last-known-good record is empty or header-only ($LASTGOOD) — nothing reverted." >&2
@@ -113,7 +132,14 @@ case "$target" in
     for i in "${!rev_files[@]}"; do
       mv "${rev_tmps[$i]}" "${rev_files[$i]}"
     done
-    echo "reverted to last-known-good."
+    # Disclose partial reverts in the success line: when some recorded files were
+    # deleted, the count restored (< total recorded) is otherwise only visible by
+    # scrolling the per-file stderr warnings.
+    if [ "$skipped" -gt 0 ]; then
+      echo "reverted ${#rev_files[@]} of $seen recorded file(s) to last-known-good ($skipped skipped as deleted)."
+    else
+      echo "reverted to last-known-good."
+    fi
     exit 0
     ;;
 esac
