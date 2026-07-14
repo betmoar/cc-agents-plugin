@@ -190,7 +190,7 @@ describe("set-model.sh --revert with a stale last-known-good", () => {
     writeFileSync(join(dir, "lastgood"), "reviewers\n");
     assert.throws(
       () => run(["--revert"]),
-      (e) => /empty or corrupt/.test(String(e.stderr ?? e.message)),
+      (e) => /empty or header-only/.test(String(e.stderr ?? e.message)),
     );
   });
 });

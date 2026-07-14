@@ -78,14 +78,17 @@ case "$target" in
       rev_files+=("$f")
       rev_models+=("$m")
     done < <(tail -n +2 "$LASTGOOD")
-    # An empty/truncated record means the snapshot was corrupted — refuse
-    # rather than "reverting" zero files and reporting success. Use element
-    # COUNTs, not `${arr[*]+x}`: the `+` set/unset test on an empty array is
-    # version-dependent (differs on bash 3.2, which this script targets), so it
-    # could read as "set" and skip the check. `${#arr[@]}`/integer counters are
-    # unambiguous everywhere and safe under `set -u`.
+    # `seen` counts well-formed record lines. Zero means the snapshot is
+    # empty or header-only (no records at all) — refuse rather than "reverting"
+    # zero files and reporting success. NOTE: this catches the empty/header-only
+    # shape only; a non-empty line whose first field isn't an existing path is
+    # bucketed as "deleted" below, not as corruption (see the exit-0 branch).
+    # Use element COUNTs, not `${arr[*]+x}`: the `+` set/unset test on an empty
+    # array is version-dependent (differs on bash 3.2, which this script
+    # targets), so it could read as "set" and skip the check. `${#arr[@]}` /
+    # integer counters are unambiguous everywhere and safe under `set -u`.
     if [ "$seen" -eq 0 ]; then
-      echo "last-known-good record is empty or corrupt ($LASTGOOD) — nothing reverted." >&2
+      echo "last-known-good record is empty or header-only ($LASTGOOD) — nothing reverted." >&2
       exit 1
     fi
     if [ "${#rev_files[@]}" -eq 0 ]; then
