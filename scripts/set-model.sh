@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Transactionally rewrite the `model:` frontmatter line in cc-agents agents.
 #
-#   set-model.sh <id>                 rewrite the 2 reviewers
+#   set-model.sh <id>                 rewrite the 2 reviewers (default group)
 #   set-model.sh --crawler <id>       rewrite glm-code-crawler only
 #   set-model.sh --implementer <id>   rewrite glm-implementer only
+#   set-model.sh --scout <id>         rewrite glm-scout only
+#   set-model.sh --brainstorm <id>    rewrite glm-brainstorm only
+#   set-model.sh --all <id>           rewrite every tunable agent at once
 #   set-model.sh --revert             restore from the last-known-good file (skips + warns on files that no longer exist)
 #   --no-probe                     skip the liveness probe (shape-check only)
 #
@@ -23,6 +26,11 @@ LASTGOOD="${CC_AGENTS_LASTGOOD:-"$PLUGIN_ROOT/.claude/cc-agents.lastgood"}"
 REVIEWERS=(glm-review-code glm-review-design)
 CRAWLER=(glm-code-crawler)
 IMPLEMENTER=(glm-implementer)
+SCOUT=(glm-scout)
+BRAINSTORM=(glm-brainstorm)
+# --all fans out over every tunable agent. Keep this the union of the groups
+# above; a new group must be added here too or --all silently skips it.
+ALL=(glm-review-code glm-review-design glm-code-crawler glm-implementer glm-scout glm-brainstorm)
 
 probe=1
 target="reviewers"
@@ -33,6 +41,9 @@ while [ $# -gt 0 ]; do
     --no-probe) probe=0 ;;
     --crawler)  target="crawler" ;;
     --implementer) target="implementer" ;;
+    --scout)    target="scout" ;;
+    --brainstorm) target="brainstorm" ;;
+    --all)      target="all" ;;
     --revert)   target="revert" ;;
     -*) echo "unknown flag: $1" >&2; exit 2 ;;
     *)  id="$1" ;;
@@ -56,6 +67,9 @@ case "$target" in
   reviewers) for r in "${REVIEWERS[@]}"; do files+=("$AGENTS_DIR/$r.md"); done ;;
   crawler)   for c in "${CRAWLER[@]}";  do files+=("$AGENTS_DIR/$c.md"); done ;;
   implementer) for x in "${IMPLEMENTER[@]}"; do files+=("$AGENTS_DIR/$x.md"); done ;;
+  scout)     for s in "${SCOUT[@]}";    do files+=("$AGENTS_DIR/$s.md"); done ;;
+  brainstorm) for b in "${BRAINSTORM[@]}"; do files+=("$AGENTS_DIR/$b.md"); done ;;
+  all)       for a in "${ALL[@]}";      do files+=("$AGENTS_DIR/$a.md"); done ;;
   revert)
     [ -f "$LASTGOOD" ] || { echo "no last-known-good to revert to" >&2; exit 1; }
     # Parse the lastgood record into (file, model) pairs. Format is one header
@@ -144,7 +158,7 @@ case "$target" in
     ;;
 esac
 
-[ -n "$id" ] || { echo "usage: set-model.sh [--crawler|--implementer] [--no-probe] <model-id> | --revert" >&2; exit 2; }
+[ -n "$id" ] || { echo "usage: set-model.sh [--crawler|--implementer|--scout|--brainstorm|--all] [--no-probe] <model-id> | --revert" >&2; exit 2; }
 
 # 1. Shape check, two parts.
 #    a) Safe charset. This is a security check, not pedantry: the id is written

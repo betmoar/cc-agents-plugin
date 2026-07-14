@@ -5,6 +5,22 @@ All notable changes to the **cc-agents** plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] — 2026-07-14
+
+Command consolidation + `--revert` hardening.
+
+### Changed
+- **One switchable `/cc-agents:model` command** replaces the three per-agent commands. Select the target group with a flag (`--crawler`, `--implementer`, `--scout`, `--brainstorm`, `--all`); no flag targets the two reviewers as before. **Roster break:** `/cc-agents:crawler-model` and `/cc-agents:implementer-model` are removed — use `/cc-agents:model --crawler|--implementer` instead.
+
+### Added
+- **`--scout`, `--brainstorm`, `--all` groups** in `set-model.sh`, making every agent with a `model:` line tunable (`glm-scout`, `glm-brainstorm` were previously untunable). `--all` rewrites every group at once, transactionally.
+
+### Fixed
+- **`set-model.sh --revert` hardened against malformed / partial last-known-good records** (#8). Each record is now bucketed by shape (`<abspath>\t<non-empty-model>`), so a corrupt-but-non-empty snapshot is refused (exit 1) instead of being silently treated as "every file deleted" and reported as a benign no-op. An empty model column no longer writes a blank `model: ` line; a final record without a trailing newline is no longer dropped; the success line discloses partial reverts (`reverted N of M … (K skipped)`).
+
+### Tests
+- +5 `--revert` hardening drift-locks; +5 for the new groups / consolidated command surface. Gate: `node --test` → **86 pass / 0 fail** · `shellcheck` clean.
+
 ## [0.2.1] — 2026-07-14
 
 Agent consolidation: 8 → 6 agents, per `docs/superpowers/specs/cc-agents-agent-consolidation-design.md` (v5). Roster break — grep your prompts/skills for the four names below. Builds on the 0.2.0 hardening + release infra below.
@@ -104,6 +120,7 @@ Hardening + handoff release: every fix below is pinned by a new drift-lock test.
 - Gate: `node --test` → **53 pass / 0 fail** (was 32) · `shellcheck` clean.
   (+7 release-gate fixtures, +1 marketplace coupling over the 45 at first cut.)
 
+[0.2.2]: https://github.com/betmoar/cc-agents-plugin/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/betmoar/cc-agents-plugin/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.2...v0.2.0
 

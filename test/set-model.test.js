@@ -35,6 +35,8 @@ beforeEach(() => {
   }
   writeFileSync(join(dir, "agents", "glm-code-crawler.md"), agent("glm-code-crawler", "glm-5-turbo"));
   writeFileSync(join(dir, "agents", "glm-implementer.md"), agent("glm-implementer", "glm-5.2[1m]"));
+  writeFileSync(join(dir, "agents", "glm-scout.md"), agent("glm-scout", "glm-5.2[1m]"));
+  writeFileSync(join(dir, "agents", "glm-brainstorm.md"), agent("glm-brainstorm", "glm-5.2[1m]"));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -99,6 +101,47 @@ describe("set-model.sh --implementer", () => {
     assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-review-design"), "glm-5.2[1m]");
     assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+  });
+});
+
+describe("set-model.sh --scout / --brainstorm (new tunable groups)", () => {
+  it("--scout targets only the scout", () => {
+    run(["--scout", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    assert.equal(modelOf("glm-scout"), "glm-4.6");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-brainstorm"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+  });
+
+  it("--brainstorm targets only brainstorm", () => {
+    run(["--brainstorm", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    assert.equal(modelOf("glm-brainstorm"), "glm-4.6");
+    assert.equal(modelOf("glm-scout"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+  });
+});
+
+describe("set-model.sh --all (every tunable agent at once)", () => {
+  it("rewrites all six agents", () => {
+    run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" });
+    for (const a of [
+      "glm-review-code", "glm-review-design", "glm-code-crawler",
+      "glm-implementer", "glm-scout", "glm-brainstorm",
+    ]) {
+      assert.equal(modelOf(a), "glm-4.6", `${a} not rewritten by --all`);
+    }
+  });
+
+  it("--all is transactional: one bad target aborts, nothing written", () => {
+    // Strip the model: line from one agent so pre-validation fails.
+    const scout = join(dir, "agents", "glm-scout.md");
+    writeFileSync(scout, readFileSync(scout, "utf8").replace(/^model:.*\n/m, ""));
+    assert.throws(() => run(["--all", "glm-4.6"], { CC_AGENTS_PROBE_CMD: "true" }));
+    // Every other agent must be untouched at its fixture default.
+    assert.equal(modelOf("glm-review-code"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-code-crawler"), "glm-5-turbo");
+    assert.equal(modelOf("glm-implementer"), "glm-5.2[1m]");
+    assert.equal(modelOf("glm-brainstorm"), "glm-5.2[1m]");
   });
 });
 
