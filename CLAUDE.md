@@ -43,11 +43,16 @@ External dependency: **cc-proxy** (separate plugin) must be listening on
 plugin never talks to Z.ai directly. Nothing enforces that cc-proxy is
 installed — only the runtime preflight.
 
-State lives in exactly two places, both files:
+State lives in exactly three places, all files:
 1. `<artifact-dir>/.review-panel/<basename>.md` — panel-ran marker + run report
    (per consuming project; gitignored via `**/.review-panel/`).
 2. `.claude/cc-agents.lastgood` — set-model.sh's revert snapshot (inside the
    plugin repo itself, resolved relative to the script; gitignored).
+3. `.claude/cc-agents.tier.lastgood` — set-tier.sh's cumulative multi-group
+   snapshot. Unlike #2, this resolves relative to the **consuming project's**
+   CWD (same as `.claude/cc-agents.local.md`, the tier settings file) —
+   per-project state, not plugin-repo state. Gitignored per-project (see
+   README). Separate file from #1/#2 — see Landmine #9.
 
 ## Load-bearing inventory (ranked by blast radius)
 
@@ -65,10 +70,14 @@ State lives in exactly two places, both files:
    — hardcoded in three places that must agree (see Couplings). The hook
    *derives* it (`${FILE_PATH%/*}/.review-panel/${FILE_PATH##*/}`); the skill
    *writes* it; the README tells users to gitignore it.
-4. **`hooks/proxy-ready.sh`** — the fail-fast preflight. Must fail CLOSED:
-   only curl exit 7/28 means "down", but missing curl (exit 127) must also
-   mean "not ready". If this fails open, every panel run turns into N opaque
-   per-agent errors.
+4. **`hooks/proxy-ready.sh`** — the fail-fast preflight. Probes `GET /v1/models`
+   and requires HTTP 200 (not just "any response at `/`" — that was the pre-0.3.0
+   behavior). Must fail CLOSED: curl exit 7/28 or a non-200 status both mean
+   "down", and missing curl (exit 127) must also mean "not ready". If this fails
+   open, every panel run turns into N opaque per-agent errors. `set-model.sh`'s
+   own liveness probe uses the same `/v1/models` membership check (test seam
+   `CC_AGENTS_MODELS_JSON`, replacing the old `CC_AGENTS_PROBE_CMD` completion-based
+   seam) — both probes reason about proxy readiness the same way now.
 5. **The four `glm-review-*` agents' shared shape** — identical
    `tools: Read, Grep, Glob` line, "CHEAP, WIDE pass" framing, confidence
    rule, "GLM first-pass — confirm before acting" closer. The duplication is
@@ -103,6 +112,8 @@ State lives in exactly two places, both files:
 | Release gate coupling (tag/version/heading semantics) | `scripts/release-gate.mjs` (the `TAG_RE`/`CHANGELOG_HEADING_RE` logic) + `test/release-gate.test.js` + `release.yml` step name + this file |
 | Skill knobs (N, lenses, 50-threshold, 150K shard, wave cap 6) | structure.test.js pins the literals — update both, and README where echoed |
 | proxy probe semantics | `test/proxy-ready.test.js` + README "Hard dependency" section |
+| tier map (`fast`/`default`/`deep`/`max` → id) | `scripts/set-tier.sh` (`resolve_tier`) ↔ `test/structure.test.js` ↔ `test/tier.test.js` ↔ README `/cc-agents:tier` section |
+| group→argv map (`GROUP_ARGV`) | `scripts/set-tier.sh` ↔ `scripts/set-model.sh`'s flag set (`--crawler`/`--implementer`/`--scout`/`--brainstorm`) — a new set-model group needs a matching `TIER_GROUPS`/`GROUP_ARGV`/`GROUP_FILES`/`GROUP_FACTORY` slot in set-tier.sh |
 
 ## Landmines (non-obvious decisions and WHY)
 
@@ -146,6 +157,17 @@ State lives in exactly two places, both files:
    Same caveat for `allowed-tools:` expansion in `commands/*.md`. If a user
    reports the preflight "failing" with *No such file or directory*, this is
    why — the proxy is probably fine.
+9. **The tier snapshot is a separate file from set-model's own lastgood, on
+   purpose.** `set-model.sh` overwrites `.claude/cc-agents.lastgood` on every
+   call, scoped to whatever files that one call touched — so if `tier apply`
+   called it once per changed group, each call would clobber the previous
+   group's snapshot and `--revert` would only restore the last group written.
+   `set-tier.sh` instead writes its own cumulative snapshot covering every
+   group in the apply *before* dispatching any `set-model.sh` call, then
+   `tier revert` reuses set-model's hardened `--revert` logic (charset
+   validation, atomic write, malformed-refusal) by pointing it at the tier
+   snapshot via `CC_AGENTS_LASTGOOD=.claude/cc-agents.tier.lastgood`. Do not
+   merge the two snapshot files — they have different write-cadence semantics.
 
 ## Playbooks
 

@@ -375,3 +375,35 @@ describe("CHANGELOG 0.2.1 entry (append-only carve-out: old names allowed in his
     assert.equal(plugin.version, newest, `plugin.json ${plugin.version} != newest CHANGELOG ${newest}`);
   });
 });
+
+describe("tier command + set-tier.sh (drift locks)", () => {
+  it("commands/tier.md wraps set-tier.sh and forwards $ARGUMENTS", () => {
+    const src = readFileSync("commands/tier.md", "utf8");
+    assert.match(src, /set-tier\.sh/);
+    assert.match(src, /allowed-tools:/);
+    assert.match(src, /\$\{CLAUDE_PLUGIN_ROOT\}/);
+    assert.match(src, /set-tier\.sh" \$ARGUMENTS/);
+    for (const sub of ["apply", "revert", "show"]) {
+      assert.ok(src.includes(sub), `tier.md missing ${sub}`);
+    }
+  });
+
+  it("set-tier.sh exists and pins the tier→id map and group→argv map", () => {
+    const src = readFileSync("scripts/set-tier.sh", "utf8");
+    assert.match(src, /fast\)\s*echo "glm-4\.5-air"/);
+    assert.match(src, /deep\)\s*echo "glm-4\.7"/);
+    assert.match(src, /max\)\s*echo "glm-5\.2"/);
+    // group→argv: review is the empty (no-flag) slot; the rest are --<group>.
+    assert.match(src, /GROUP_ARGV=\("" "--crawler" "--implementer" "--scout" "--brainstorm"\)/);
+    // default → per-group factory
+    assert.match(src, /GROUP_FACTORY=\("glm-5\.2\[1m\]" "glm-5-turbo" "glm-5\.2\[1m\]" "glm-5\.2\[1m\]" "glm-5\.2\[1m\]"\)/);
+  });
+
+  it("README documents the tier command, tiers, and settings file", () => {
+    const s = readFileSync("README.md", "utf8");
+    assert.ok(s.includes("/cc-agents:tier"), "README missing /cc-agents:tier");
+    assert.ok(s.includes("cc-agents.local.md"), "README missing settings file");
+    for (const t of ["fast", "deep", "max"]) assert.ok(s.includes(t), `README missing tier ${t}`);
+    assert.ok(s.includes("cc-agents.tier.lastgood"), "README missing tier snapshot gitignore line");
+  });
+});

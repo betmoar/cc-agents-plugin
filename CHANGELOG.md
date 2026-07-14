@@ -5,6 +5,26 @@ All notable changes to the **cc-agents** plugin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-07-14
+
+### Added
+- Task-class model tiering: `.claude/cc-agents.local.md` settings file and the
+  `/cc-agents:tier apply|revert|show` command (`scripts/set-tier.sh`). Tiers
+  `fast`/`default`/`deep`/`max` map to real proxy ids; `default` resets a group
+  to its factory id. `experimental: true` opts into raw OpenRouter ids.
+- Multi-group tier snapshot (`.claude/cc-agents.tier.lastgood`); `tier revert`
+  restores the whole last apply by delegating to `set-model.sh --revert`.
+
+### Changed
+- `set-model.sh` liveness probe now uses a free `GET /v1/models` membership check
+  (was a `POST /v1/messages` completion). Kills the transient-429 false failure.
+  The `[1m]` context-variant marker is stripped before comparison.
+- `--no-probe` rationale shifted: the old cost/429 justification is gone; it now
+  covers only the narrow routable-but-unlisted case.
+- Test seam `CC_AGENTS_PROBE_CMD` removed in favor of `CC_AGENTS_MODELS_JSON`
+  (production behavior unchanged).
+- `hooks/proxy-ready.sh` now probes `GET /v1/models` and requires a 200.
+
 ## [0.2.2] — 2026-07-14
 
 Command consolidation + `--revert` hardening.
@@ -125,6 +145,7 @@ Hardening + handoff release: every fix below is pinned by a new drift-lock test.
 - Gate: `node --test` → **53 pass / 0 fail** (was 32) · `shellcheck` clean.
   (+7 release-gate fixtures, +1 marketplace coupling over the 45 at first cut.)
 
+[0.3.0]: https://github.com/betmoar/cc-agents-plugin/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/betmoar/cc-agents-plugin/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/betmoar/cc-agents-plugin/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/betmoar/cc-agents-plugin/compare/v0.1.2...v0.2.0
