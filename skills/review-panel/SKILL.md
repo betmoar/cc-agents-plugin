@@ -16,7 +16,7 @@ Convene a multi-lens GLM review panel over a spec or plan and synthesize one rep
   - **lens C — testability:** every requirement's observable acceptance criterion.
 - **Synthesis drop threshold:** discard any finding scored **< 50**.
 - **Clarify phase:** the `should-clarify` bucket → `AskUserQuestion` (≤4 per round, top-scored first); answers appended to the artifact as a `## Clarifications` section (append-only, never rewrite the body).
-- **Run report (marker):** `docs/superpowers/specs/.review-panel/<artifact-basename>.md` — a full per-run record (lenses, per-finding scores + buckets, asked+answers, per-agent tokens, verdict). This file IS the marker; its presence means the panel ran.
+- **Run report (marker):** `<artifact-dir>/.review-panel/<artifact-basename>.md` — a sibling directory of the reviewed artifact, so it works in any project layout. A full per-run record (lenses, per-finding scores + buckets, asked+answers, per-agent tokens, verdict). This file IS the marker; its presence means the panel ran, and the PostToolUse hook checks exactly this path to avoid re-suggesting a panel.
 
 ## Procedure
 
@@ -31,6 +31,8 @@ Convene a multi-lens GLM review panel over a spec or plan and synthesize one rep
    ```
 
    If it exits non-zero, STOP and tell the user "cc-proxy is not running — start it, then re-run the panel." Do not dispatch agents against a down proxy.
+
+   (If `${CLAUDE_PLUGIN_ROOT}` is unset in your shell, the script is at `<plugin-root>/hooks/proxy-ready.sh` — the plugin root is two directories above this SKILL.md file. A "No such file or directory" error means the variable was unset, NOT that the proxy is down.)
 
 3. **Dispatch N reviewers in parallel**, one Agent call per lens, in a single message. Each call uses the matching reviewer agent and a prompt of the form:
 
@@ -48,14 +50,9 @@ Convene a multi-lens GLM review panel over a spec or plan and synthesize one rep
    - If the `should-clarify` bucket is **empty**, skip this step entirely — go to step 6.
    - Otherwise turn each `should-clarify` finding into an `AskUserQuestion` item: the finding's open question as the `question`, plus 2–4 concrete options derived from the finding's own suggested directions (the tool always adds "Other"). Carry the finding's lens in the question text.
    - **Cap: ≤4 questions per round.** `AskUserQuestion` allows at most 4. Ask the top 4 by score in **one** call. If more remain, do not chain rounds — note the leftover count in the step-6 report. One round, not an interrogation.
-   - After answers return, **append** (never rewrite) to the **reviewed artifact** (its own path, at end of file):
+   - Collect the answers; do NOT write them to the artifact yet — that happens in step 7, **after** the run report exists (ordering matters, see step 7).
 
-     ```
-     ## Clarifications (YYYY-MM-DD)
-     - **Q (lens A):** <question> → **A:** <user's answer>
-     ```
-
-6. **Write the run report** (this file IS the panel-ran marker — its presence means the panel ran). Create `docs/superpowers/specs/.review-panel/<artifact-basename>.md`:
+6. **Write the run report** (this file IS the panel-ran marker — its presence means the panel ran). Create `<artifact-dir>/.review-panel/<artifact-basename>.md` (a `.review-panel/` directory next to the reviewed artifact):
 
    ```
    # Panel run — <artifact-basename>  (<YYYY-MM-DD HH:MM>)
@@ -77,4 +74,13 @@ Convene a multi-lens GLM review panel over a spec or plan and synthesize one rep
 
    Per-agent token counts come from each Agent result's `<usage>subagent_tokens</usage>` block (the main agent receives it). Record them if present; **omit the tokens line if not — never fabricate**.
 
-7. **Report** to the user: the must-resolve + consider findings (and any un-asked should-clarify, with the leftover count), then a one-line pointer — "N clarifications recorded → `<artifact>`; full run report → `<marker path>`". Note this was a GLM first pass — confirm before acting.
+7. **Append the clarifications to the reviewed artifact** (its own path, at end of file). **Append-only — never rewrite the body:**
+
+   ```
+   ## Clarifications (YYYY-MM-DD)
+   - **Q (lens A):** <question> → **A:** <user's answer>
+   ```
+
+   This step runs AFTER step 6 on purpose: this Edit re-fires the PostToolUse hook, and the run report you just wrote is the marker that tells the hook the panel already ran. If the hook still emits a suggestion here, ignore it — you ARE the panel; do not convene another one on this artifact this round.
+
+8. **Report** to the user: the must-resolve + consider findings (and any un-asked should-clarify, with the leftover count), then a one-line pointer — "N clarifications recorded → `<artifact>`; full run report → `<marker path>`". Note this was a GLM first pass — confirm before acting.

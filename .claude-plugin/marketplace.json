@@ -1,0 +1,16 @@
+{
+  "name": "cc-agents-plugin",
+  "owner": {
+    "name": "betmoar"
+  },
+  "metadata": {
+    "description": "Marketplace for the cc-agents plugin. The plugin lives at the repo root; this file exists so `/plugin marketplace add` works on a local checkout or the GitHub repo, as a fallback to installing from a central marketplace."
+  },
+  "plugins": [
+    {
+      "name": "cc-agents",
+      "source": "./",
+      "description": "GLM-offload review agents with an auto-convened multi-lens review panel for specs and plans."
+    }
+  ]
+}

@@ -10,6 +10,30 @@ describe("plugin manifest", () => {
     assert.ok(m.description && m.description.length > 0);
     assert.ok(m.author && m.author.name);
   });
+
+  // VERSION-SYNC drift-lock: 0.1.1 bumped plugin.json but not package.json and
+  // the drift shipped. The two versions must move together.
+  it("plugin.json and package.json versions match", () => {
+    const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8"));
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    assert.equal(plugin.version, pkg.version,
+      "plugin.json and package.json versions have drifted — bump both together");
+  });
+});
+
+describe("marketplace manifest", () => {
+  // COUPLING drift-lock: the standalone-install marketplace advertises the
+  // plugin at repo root. Its plugin entry name and source must stay in sync
+  // with plugin.json so `/plugin install cc-agents@cc-agents-plugin` resolves.
+  it("advertises cc-agents at source ./ matching plugin.json", () => {
+    const mk = JSON.parse(readFileSync(".claude-plugin/marketplace.json", "utf8"));
+    const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8"));
+    assert.ok(Array.isArray(mk.plugins) && mk.plugins.length >= 1);
+    const entry = mk.plugins.find((p) => p.name === plugin.name);
+    assert.ok(entry, `marketplace has no entry named ${plugin.name}`);
+    assert.equal(entry.source, "./", "plugin lives at repo root — source must be ./");
+    assert.ok(mk.name && mk.owner && mk.owner.name, "marketplace missing name/owner");
+  });
 });
 
 describe("agents", () => {
@@ -122,6 +146,30 @@ describe("code-crawl skill", () => {
     assert.match(s, /\b6\b/);                  // wave cap
     assert.match(s, /glm-code-crawler/);
     assert.match(s, /proxy-ready\.sh/);
+  });
+});
+
+describe("marker-path coupling (hook ↔ skill ↔ README)", () => {
+  // The run-report marker directory name `.review-panel` is hardcoded in three
+  // places that MUST agree: the skill (writes the marker), the hook (checks it
+  // to break the clarifications feedback loop AND early-exits on paths inside
+  // it), and the README's .gitignore advice. If you rename it, rename it
+  // everywhere — this test is the tripwire.
+  it("hook, skill, and README all use the same .review-panel dirname", () => {
+    const hook = readFileSync("hooks/spec-plan-suggest.sh", "utf8");
+    const skill = readFileSync("skills/review-panel/SKILL.md", "utf8");
+    const readme = readFileSync("README.md", "utf8");
+    assert.match(hook, /\*\/\.review-panel\/\*/, "hook lost its self-review path guard");
+    assert.match(hook, /\/\.review-panel\//, "hook lost the marker-exists check");
+    assert.match(skill, /<artifact-dir>\/\.review-panel\/<artifact-basename>\.md/,
+      "skill marker path changed — update hook + README + this test together");
+    assert.match(readme, /\*\*\/\.review-panel\//, "README .gitignore advice lost");
+  });
+
+  it("the hook derives the marker as <dir>/.review-panel/<basename>", () => {
+    const hook = readFileSync("hooks/spec-plan-suggest.sh", "utf8");
+    assert.match(hook, /\$\{FILE_PATH%\/\*\}\/\.review-panel\/\$\{FILE_PATH##\*\/\}/,
+      "marker derivation in the hook no longer matches the skill's marker layout");
   });
 });
 
@@ -275,23 +323,23 @@ describe("README roster invariant (README.md only — CHANGELOG exempt)", () => 
   });
 });
 
-describe("CHANGELOG 0.2.0 entry (append-only carve-out: old names allowed in history)", () => {
-  it("has a 0.2.0 entry naming all four removed/renamed agents", () => {
+describe("CHANGELOG 0.2.1 entry (append-only carve-out: old names allowed in history)", () => {
+  it("has a 0.2.1 entry naming all four removed/renamed agents", () => {
     const s = readFileSync("CHANGELOG.md", "utf8");
-    const start = s.indexOf("## [0.2.0]");
-    assert.ok(start >= 0, "no 0.2.0 entry");
+    const start = s.indexOf("## [0.2.1]");
+    assert.ok(start >= 0, "no 0.2.1 entry");
     const rest = s.slice(start);
     const end = rest.indexOf("\n## [", 1);
     const entry = end === -1 ? rest : rest.slice(0, end);
     for (const a of ["glm-review-spec", "glm-review-plan", "glm-review-implementation", "glm-bulk-reader"]) {
-      assert.ok(entry.includes(a), `0.2.0 entry missing ${a}`);
+      assert.ok(entry.includes(a), `0.2.1 entry missing ${a}`);
     }
   });
 
-  it("plugin.json and package.json agree on 0.2.0", () => {
+  it("plugin.json and package.json agree on 0.2.1", () => {
     const plugin = JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8"));
     const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-    assert.equal(plugin.version, "0.2.0");
-    assert.equal(pkg.version, "0.2.0");
+    assert.equal(plugin.version, "0.2.1");
+    assert.equal(pkg.version, "0.2.1");
   });
 });
