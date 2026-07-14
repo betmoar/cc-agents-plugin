@@ -110,6 +110,15 @@ describe("model command (consolidated, single switchable command)", () => {
       assert.ok(!existsSync(f), `${f} should have been removed in the consolidation`);
     }
   });
+
+  it("--all is derived from the group arrays, not a hand-maintained literal", () => {
+    // Drift guard: a future group added to REVIEWERS/CRAWLER/... but forgotten in
+    // ALL would make --all silently skip that agent. Deriving ALL from the other
+    // arrays removes the drift; this test locks the derived form in.
+    const src = readFileSync("scripts/set-model.sh", "utf8");
+    assert.match(src, /ALL=\(\s*"\$\{REVIEWERS\[@\]\}"\s+"\$\{CRAWLER\[@\]\}"\s+"\$\{IMPLEMENTER\[@\]\}"\s+"\$\{SCOUT\[@\]\}"\s+"\$\{BRAINSTORM\[@\]\}"\s*\)/,
+      "ALL must be derived as the union of the group arrays");
+  });
 });
 
 describe("review-panel skill", () => {

@@ -9,17 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Command consolidation + `--revert` hardening.
 
+### Removed
+- **`/cc-agents:crawler-model` and `/cc-agents:implementer-model`** — folded into the one switchable command below. **Roster break:** use `/cc-agents:model --crawler|--implementer` instead.
+
 ### Changed
-- **One switchable `/cc-agents:model` command** replaces the three per-agent commands. Select the target group with a flag (`--crawler`, `--implementer`, `--scout`, `--brainstorm`, `--all`); no flag targets the two reviewers as before. **Roster break:** `/cc-agents:crawler-model` and `/cc-agents:implementer-model` are removed — use `/cc-agents:model --crawler|--implementer` instead.
+- **One switchable `/cc-agents:model` command** replaces the three per-agent commands. Select the target group with a flag (`--crawler`, `--implementer`, `--scout`, `--brainstorm`, `--all`); no flag targets the two reviewers as before.
 
 ### Added
-- **`--scout`, `--brainstorm`, `--all` groups** in `set-model.sh`, making every agent with a `model:` line tunable (`glm-scout`, `glm-brainstorm` were previously untunable). `--all` rewrites every group at once, transactionally.
+- **`--scout`, `--brainstorm`, `--all` groups** in `set-model.sh`, making every agent with a `model:` line tunable (`glm-scout`, `glm-brainstorm` were previously untunable). `--all` rewrites every group at once, transactionally, and its member list is derived from the group arrays so a new group can't silently escape it.
 
 ### Fixed
 - **`set-model.sh --revert` hardened against malformed / partial last-known-good records** (#8). Each record is now bucketed by shape (`<abspath>\t<non-empty-model>`), so a corrupt-but-non-empty snapshot is refused (exit 1) instead of being silently treated as "every file deleted" and reported as a benign no-op. An empty model column no longer writes a blank `model: ` line; a final record without a trailing newline is no longer dropped; the success line discloses partial reverts (`reverted N of M … (K skipped)`).
+- **`--revert` now charset-validates the recorded model value**, closing an injection asymmetry: the recorded id is fed to the same `awk -v` as the forward path, so a corrupt/hand-edited lastgood with a `\n` in the model column could inject an extra frontmatter line (e.g. `tools: Bash`) into a least-privilege agent. A bad value now poisons the whole snapshot (refused, exit 1).
+- **Stray positional arguments are rejected** instead of silently mis-targeting. A bareword group name (`set-model.sh scout glm-4.6`, missing `--`) used to be swallowed as the id and silently retune the *reviewers*; a second positional used to last-win silently. Both now exit 2 with a clear message.
 
 ### Tests
-- +5 `--revert` hardening drift-locks; +5 for the new groups / consolidated command surface. Gate: `node --test` → **86 pass / 0 fail** · `shellcheck` clean.
+- +5 `--revert` hardening drift-locks; +5 injection/positional/round-trip locks; +5 for the new groups / consolidated command surface. Gate: `node --test` → **93 pass / 0 fail** · `shellcheck` clean.
 
 ## [0.2.1] — 2026-07-14
 

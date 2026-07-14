@@ -28,13 +28,15 @@ CRAWLER=(glm-code-crawler)
 IMPLEMENTER=(glm-implementer)
 SCOUT=(glm-scout)
 BRAINSTORM=(glm-brainstorm)
-# --all fans out over every tunable agent. Keep this the union of the groups
-# above; a new group must be added here too or --all silently skips it.
-ALL=(glm-review-code glm-review-design glm-code-crawler glm-implementer glm-scout glm-brainstorm)
+# --all fans out over every tunable agent. DERIVED from the group arrays above
+# (not hand-listed) so adding a new group can't silently leave --all skipping it.
+# Splices with the ${arr[@]} idiom — bash 3.2 safe; these arrays are never empty.
+ALL=("${REVIEWERS[@]}" "${CRAWLER[@]}" "${IMPLEMENTER[@]}" "${SCOUT[@]}" "${BRAINSTORM[@]}")
 
 probe=1
 target="reviewers"
 id=""
+id_set=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,7 +48,17 @@ while [ $# -gt 0 ]; do
     --all)      target="all" ;;
     --revert)   target="revert" ;;
     -*) echo "unknown flag: $1" >&2; exit 2 ;;
-    *)  id="$1" ;;
+    # A bareword that names a group is almost certainly a missing `--` (e.g.
+    # `set-model.sh scout glm-4.6`): without this it would be swallowed as the
+    # id, leaving target=reviewers, and SILENTLY retune the wrong agents.
+    reviewers|crawler|implementer|scout|brainstorm|all|revert)
+      echo "did you mean --$1? bare '$1' is not a model id." >&2; exit 2 ;;
+    # A second positional means ambiguous intent (which id wins?). Refuse rather
+    # than last-write-wins silently.
+    *)  if [ "$id_set" -eq 1 ]; then
+          echo "unexpected argument: '$1' (id already set to '$id')" >&2; exit 2
+        fi
+        id="$1"; id_set=1 ;;
   esac
   shift
 done
@@ -80,7 +92,8 @@ case "$target" in
     # Three counters, three distinct outcomes:
     #   seen      — well-formed records: `<abspath>\t<non-empty-model>`, no extra field
     #   malformed — records that DON'T match that shape (no tab, empty model,
-    #               non-absolute path, or a stray 3rd column from a format shift)
+    #               non-absolute path, stray 3rd column, or a model VALUE outside
+    #               the id charset — see below)
     #   skipped   — well-formed records whose file was deleted since the snapshot
     # Bucketing by SHAPE (not just "line non-empty") is the fix for issue #8: a
     # corrupt-but-non-empty snapshot must be refused, not silently treated as
@@ -99,6 +112,12 @@ case "$target" in
       if [ -n "$extra" ] || [ -z "$m" ]; then
         malformed=$((malformed + 1)); continue
       fi
+      # SECURITY: the recorded model is fed to the same `awk -v` as the forward
+      # path (fm_rewrite), which interprets backslash escapes — a `\n` in a
+      # corrupt/hand-edited lastgood injects an extra frontmatter line (e.g.
+      # `tools: Bash`), escalating a least-privilege agent. Re-apply the forward
+      # path's charset check here; a bad value poisons the whole snapshot.
+      case "$m" in *[!]A-Za-z0-9._:/[-]*) malformed=$((malformed + 1)); continue ;; esac
       seen=$((seen + 1))
       if [ ! -f "$f" ]; then
         echo "$(basename "$f") no longer exists — skipped" >&2
